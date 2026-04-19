@@ -1,6 +1,6 @@
 # Spy Signal Backoffice
 
-Admin-only operational console (separate app) for analyst job workflows.
+Admin-only operational console (separate app) for analyst and data-ops workflows.
 
 ## Features
 
@@ -9,6 +9,9 @@ Admin-only operational console (separate app) for analyst job workflows.
 - Analyst job creation (`ticker_snapshot`, `coverage_report`)
 - Job status polling and persisted result rendering
 - Recent jobs history with failed-job retry
+- Data Ops health calendar (`/data-ops`)
+- Targeted rebuild/refill job submission + retry history
+- Macro series upsert and release-calendar row upsert job forms
 
 ## Environment
 

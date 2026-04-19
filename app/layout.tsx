@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { ClerkProvider, SignInButton, UserButton } from '@clerk/nextjs'
 import { auth } from '@clerk/nextjs/server'
 import './globals.css'
@@ -16,7 +17,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <body>
           <header className="header">
             <div className="container header-inner">
-              <div className="brand">Spy Signal Backoffice</div>
+              <div className="brand-wrap">
+                <div className="brand">Spy Signal Backoffice</div>
+                <nav className="header-nav">
+                  <Link href="/analyst">Analyst</Link>
+                  <Link href="/data-ops">Data Ops</Link>
+                </nav>
+              </div>
               <div>
                 {userId ? <UserButton /> : <SignInButton />}
               </div>

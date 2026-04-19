@@ -34,6 +34,29 @@ body {
   letter-spacing: 0.03em;
 }
 
+.brand-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-nav a {
+  color: #cbd5e1;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.header-nav a:hover {
+  color: #fff;
+}
+
 .main {
   padding-top: 24px;
   padding-bottom: 40px;
@@ -131,6 +154,40 @@ button.secondary {
   gap: 10px;
   padding: 10px 0;
   border-bottom: 1px solid #e2e8f0;
+}
+
+.grid-health {
+  overflow: auto;
+  border: 1px solid #dbe3f0;
+  border-radius: 10px;
+}
+
+.health-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.health-table th,
+.health-table td {
+  padding: 8px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.cell-ok {
+  color: #047857;
+  font-weight: 600;
+}
+
+.cell-missing {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.cell-na {
+  color: #64748b;
 }
 
 .job-row:last-child {
