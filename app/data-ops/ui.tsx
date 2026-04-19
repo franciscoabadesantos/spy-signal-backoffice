@@ -61,6 +61,12 @@ function toTodayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+function renderValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—'
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return JSON.stringify(value)
+}
+
 function shiftIsoDays(days: number): string {
   const now = new Date()
   now.setDate(now.getDate() + days)
@@ -302,6 +308,12 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
     })
   }, [jobs])
 
+  const currentResult = (currentJob?.result ?? null) as Record<string, unknown> | null
+  const currentProgress = (currentResult?.progress ?? null) as Record<string, unknown> | null
+  const currentOutput = (currentResult?.output ?? null) as Record<string, unknown> | null
+  const currentPlan = ((currentResult?.plan ?? currentOutput?.preview ?? null) as Record<string, unknown> | null)
+  const currentHealthChecks = Array.isArray(currentProgress?.health_checks) ? (currentProgress?.health_checks as Array<Record<string, unknown>>) : []
+
   return (
     <div>
       <div className="card">
@@ -542,6 +554,43 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
             <p className="small">Started: {formatDate(currentJob.started_at)}</p>
             <p className="small">Finished: {formatDate(currentJob.finished_at)}</p>
             {currentJob.error_message ? <div className="error">{currentJob.error_message}</div> : null}
+            {currentProgress ? (
+              <>
+                <h4>Execution Progress</h4>
+                <div className="small">Step: {renderValue(currentProgress.step)}</div>
+                <div className="small">Step Status: {renderValue(currentProgress.step_status)}</div>
+                <div className="small">
+                  Batch: {renderValue(currentProgress.current_batch)} / {renderValue(currentProgress.total_batches)}
+                </div>
+                <div className="small">Rows Written: {renderValue(currentProgress.rows_written_total)}</div>
+                <div className="small">Rows Deleted: {renderValue(currentProgress.rows_deleted_total)}</div>
+                <div className="small">Finalization: {renderValue(currentProgress.finalization_status)}</div>
+                {currentProgress.current_window ? (
+                  <div className="small">Current Window: {renderValue(currentProgress.current_window)}</div>
+                ) : null}
+                {currentProgress.abort_reason ? <div className="error">Abort Reason: {renderValue(currentProgress.abort_reason)}</div> : null}
+              </>
+            ) : null}
+            {currentPlan ? (
+              <>
+                <h4>Plan / Dry Run Preview</h4>
+                <div className="small">Execution Mode: {renderValue(currentPlan.execution_mode)}</div>
+                <div className="small">Window: {renderValue(currentPlan.start_date)} → {renderValue(currentPlan.end_date)}</div>
+                <div className="small">Chunk Count: {renderValue(currentPlan.chunk_count)}</div>
+                <div className="small">Chunk Size: {renderValue(currentPlan.chunk_size)}</div>
+                <div className="small">Sleep Seconds: {renderValue(currentPlan.sleep_seconds)}</div>
+                <div className="small">Resolved Symbols: {renderValue(currentPlan.resolved_symbols)}</div>
+                <div className="small">Series Start Dates: {renderValue(currentPlan.series_start_dates)}</div>
+                <div className="small">Refresh MVs: {renderValue(currentPlan.refresh_materialized_views)}</div>
+                <div className="small">Wipe Tables: {renderValue(currentPlan.wipe_tables)}</div>
+              </>
+            ) : null}
+            {currentHealthChecks.length > 0 ? (
+              <>
+                <h4>Health Checks</h4>
+                <pre>{JSON.stringify(currentHealthChecks, null, 2)}</pre>
+              </>
+            ) : null}
             <h4>Params</h4>
             <pre>{JSON.stringify(currentJob.params ?? {}, null, 2)}</pre>
             <h4>Result</h4>
