@@ -67,6 +67,11 @@ function renderValue(value: unknown): string {
   return JSON.stringify(value)
 }
 
+function readPlanBatchSize(plan: Record<string, unknown> | null): unknown {
+  if (!plan) return null
+  return plan.upsert_batch_size ?? plan.chunk_size ?? null
+}
+
 function shiftIsoDays(days: number): string {
   const now = new Date()
   now.setDate(now.getDate() + days)
@@ -526,6 +531,13 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
           </div>
         </div>
         <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="small">
+            Scheduled release timestamps are expected release times. Actual observed availability belongs in
+            <code> observed_first_available_at_utc </code>
+            when known.
+          </div>
+        </div>
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
           <label style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <input type="checkbox" checked={releaseDryRun} onChange={(event) => setReleaseDryRun(event.target.checked)} style={{ width: 'auto' }} />
             dry_run
@@ -577,7 +589,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
                 <div className="small">Execution Mode: {renderValue(currentPlan.execution_mode)}</div>
                 <div className="small">Window: {renderValue(currentPlan.start_date)} → {renderValue(currentPlan.end_date)}</div>
                 <div className="small">Chunk Count: {renderValue(currentPlan.chunk_count)}</div>
-                <div className="small">Chunk Size: {renderValue(currentPlan.chunk_size)}</div>
+                <div className="small">Upsert Batch Size: {renderValue(readPlanBatchSize(currentPlan))}</div>
                 <div className="small">Sleep Seconds: {renderValue(currentPlan.sleep_seconds)}</div>
                 <div className="small">Resolved Symbols: {renderValue(currentPlan.resolved_symbols)}</div>
                 <div className="small">Series Start Dates: {renderValue(currentPlan.series_start_dates)}</div>
