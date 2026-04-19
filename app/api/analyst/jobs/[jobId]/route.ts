@@ -5,7 +5,11 @@ function backendHeaders(): HeadersInit {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   }
-  const token = process.env.FINANCE_BACKEND_SERVICE_TOKEN?.trim()
+  const token = (
+    process.env.BACKEND_SERVICE_TOKEN
+    || process.env.FINANCE_BACKEND_SERVICE_TOKEN
+    || ''
+  ).trim()
   if (token) {
     headers.Authorization = `Bearer ${token}`
   }
@@ -13,9 +17,9 @@ function backendHeaders(): HeadersInit {
 }
 
 function backendBaseUrl(): string {
-  const base = process.env.FINANCE_BACKEND_URL?.trim()
+  const base = (process.env.BACKEND_BASE_URL || process.env.FINANCE_BACKEND_URL || '').trim()
   if (!base) {
-    throw new Error('FINANCE_BACKEND_URL_MISSING')
+    throw new Error('BACKEND_BASE_URL_MISSING')
   }
   return base.replace(/\/$/, '')
 }
