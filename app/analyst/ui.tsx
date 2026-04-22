@@ -407,8 +407,8 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
             <p className="small">Finished: {formatDate(currentJob.finished_at)}</p>
             {currentJob.error_message ? <div className="error">{currentJob.error_message}</div> : null}
 
-            {currentJob.result ? renderSignalResult(signalResult(currentJob) ?? {}) : null}
-            {currentJob.result ? renderLegacyResult(legacyResult(currentJob) ?? {}) : null}
+            {signalResult(currentJob) ? renderSignalResult(signalResult(currentJob) as SignalAnalysisResult) : null}
+            {legacyResult(currentJob) ? renderLegacyResult(legacyResult(currentJob) as LegacyAnalysisResult) : null}
           </>
         )}
       </div>
