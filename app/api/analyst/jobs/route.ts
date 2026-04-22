@@ -39,9 +39,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
-  const analysisType = String(body.analysis_type ?? 'ticker_snapshot').trim()
-  if (!['ticker_snapshot', 'coverage_report'].includes(analysisType)) {
-    return NextResponse.json({ error: 'analysis_type must be ticker_snapshot or coverage_report.' }, { status: 400 })
+  const analysisType = String(body.analysis_type ?? 'ticker_signal_v1').trim()
+  if (!['ticker_snapshot', 'coverage_report', 'ticker_signal_v1'].includes(analysisType)) {
+    return NextResponse.json(
+      { error: 'analysis_type must be ticker_snapshot, coverage_report, or ticker_signal_v1.' },
+      { status: 400 }
+    )
   }
 
   const ticker = String(body.ticker ?? '').trim().toUpperCase()
