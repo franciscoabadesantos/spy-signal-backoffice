@@ -2,15 +2,38 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
-type AnalysisType = 'ticker_snapshot' | 'coverage_report'
+type AnalysisType = 'ticker_snapshot' | 'coverage_report' | 'ticker_signal_v1'
 type JobStatus = 'queued' | 'running' | 'completed' | 'failed'
 
-type AnalysisResult = {
+type LegacyAnalysisResult = {
   summary?: string
   sections?: Array<{ title?: string; items?: unknown[] }>
   warnings?: string[]
   metadata?: Record<string, unknown>
 }
+
+type SignalAnalysisResult = {
+  summary?: {
+    ticker?: string
+    signal_label?: string
+    signal_score?: number | null
+    confidence?: number | null
+    next_earnings_date?: string | null
+  }
+  signal?: {
+    stance?: string | null
+    drivers?: string[] | null
+    risks?: string[] | null
+    confidence?: number | null
+    score?: number | null
+    label?: string | null
+  }
+  warnings?: string[] | null
+  metadata?: Record<string, unknown>
+  summary_text?: string | null
+}
+
+type AnalysisResult = LegacyAnalysisResult | SignalAnalysisResult
 
 type AnalysisJob = {
   job_id: string
@@ -35,6 +58,23 @@ function formatDate(value?: string | null): string {
   return date.toLocaleString()
 }
 
+function formatShortDate(value?: string | null): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString()
+}
+
+function formatScore(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  return value.toFixed(3)
+}
+
+function formatConfidence(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  return `${Math.round(value * 100)}%`
+}
+
 function statusClass(status: JobStatus): string {
   return `badge ${status}`
 }
@@ -47,11 +87,134 @@ function isStuck(job: AnalysisJob): boolean {
   return elapsedMs > STUCK_MINUTES * 60_000
 }
 
+function signalResult(job: AnalysisJob): SignalAnalysisResult | null {
+  if (job.analysis_type !== 'ticker_signal_v1' || !job.result) return null
+  return job.result as SignalAnalysisResult
+}
+
+function legacyResult(job: AnalysisJob): LegacyAnalysisResult | null {
+  if (job.analysis_type === 'ticker_signal_v1' || !job.result) return null
+  return job.result as LegacyAnalysisResult
+}
+
+function renderSignalResult(result: SignalAnalysisResult) {
+  const summary = result.summary ?? {}
+  const signal = result.signal ?? {}
+  const warnings = Array.isArray(result.warnings) ? result.warnings : []
+  const drivers = Array.isArray(signal.drivers) ? signal.drivers : []
+  const risks = Array.isArray(signal.risks) ? signal.risks : []
+
+  return (
+    <>
+      <h4>Signal Summary</h4>
+      <div className="row" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
+        <div>
+          <label>Label</label>
+          <div>{summary.signal_label ?? signal.label ?? '—'}</div>
+        </div>
+        <div>
+          <label>Score</label>
+          <div>{formatScore(summary.signal_score ?? signal.score)}</div>
+        </div>
+        <div>
+          <label>Confidence</label>
+          <div>{formatConfidence(summary.confidence ?? signal.confidence)}</div>
+        </div>
+        <div>
+          <label>Stance</label>
+          <div>{signal.stance ?? '—'}</div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <label>Next Earnings Date</label>
+        <div>{formatShortDate(summary.next_earnings_date)}</div>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <h4>Drivers</h4>
+        {drivers.length > 0 ? (
+          <ul>
+            {drivers.map((driver) => (
+              <li key={driver}>{driver}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="small">No drivers returned.</p>
+        )}
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <h4>Risks</h4>
+        {risks.length > 0 ? (
+          <ul>
+            {risks.map((risk) => (
+              <li key={risk}>{risk}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="small">No risks returned.</p>
+        )}
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <h4>Warnings</h4>
+        {warnings.length > 0 ? (
+          <div className="error">
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="small">No warnings.</p>
+        )}
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <h4>Narrative</h4>
+        <p>{result.summary_text ?? '—'}</p>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <details>
+          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Raw JSON</summary>
+          <pre>{JSON.stringify(result, null, 2)}</pre>
+        </details>
+      </div>
+    </>
+  )
+}
+
+function renderLegacyResult(result: LegacyAnalysisResult) {
+  return (
+    <>
+      <h4>Summary</h4>
+      <p>{result.summary ?? '—'}</p>
+
+      <h4>Sections</h4>
+      {(result.sections ?? []).map((section, index) => (
+        <div key={`${section.title ?? 'section'}-${index}`} style={{ marginBottom: 10 }}>
+          <strong>{section.title ?? 'Untitled'}</strong>
+          <pre>{JSON.stringify(section.items ?? [], null, 2)}</pre>
+        </div>
+      ))}
+
+      <h4>Warnings</h4>
+      <pre>{JSON.stringify(result.warnings ?? [], null, 2)}</pre>
+
+      <h4>Metadata</h4>
+      <pre>{JSON.stringify(result.metadata ?? {}, null, 2)}</pre>
+    </>
+  )
+}
+
 export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
   const [ticker, setTicker] = useState('AAPL')
   const [region, setRegion] = useState('us')
   const [exchange, setExchange] = useState('')
-  const [analysisType, setAnalysisType] = useState<AnalysisType>('ticker_snapshot')
+  const [analysisType, setAnalysisType] = useState<AnalysisType>('ticker_signal_v1')
 
   const [jobs, setJobs] = useState<AnalysisJob[]>([])
   const [currentJob, setCurrentJob] = useState<AnalysisJob | null>(null)
@@ -207,6 +370,7 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
             <div>
               <label htmlFor="analysisType">Analysis Type</label>
               <select id="analysisType" value={analysisType} onChange={(event) => setAnalysisType(event.target.value as AnalysisType)}>
+                <option value="ticker_signal_v1">ticker_signal_v1</option>
                 <option value="ticker_snapshot">ticker_snapshot</option>
                 <option value="coverage_report">coverage_report</option>
               </select>
@@ -243,26 +407,8 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
             <p className="small">Finished: {formatDate(currentJob.finished_at)}</p>
             {currentJob.error_message ? <div className="error">{currentJob.error_message}</div> : null}
 
-            {currentJob.result ? (
-              <>
-                <h4>Summary</h4>
-                <p>{currentJob.result.summary ?? '—'}</p>
-
-                <h4>Sections</h4>
-                {(currentJob.result.sections ?? []).map((section, index) => (
-                  <div key={`${section.title ?? 'section'}-${index}`} style={{ marginBottom: 10 }}>
-                    <strong>{section.title ?? 'Untitled'}</strong>
-                    <pre>{JSON.stringify(section.items ?? [], null, 2)}</pre>
-                  </div>
-                ))}
-
-                <h4>Warnings</h4>
-                <pre>{JSON.stringify(currentJob.result.warnings ?? [], null, 2)}</pre>
-
-                <h4>Metadata</h4>
-                <pre>{JSON.stringify(currentJob.result.metadata ?? {}, null, 2)}</pre>
-              </>
-            ) : null}
+            {currentJob.result ? renderSignalResult(signalResult(currentJob) ?? {}) : null}
+            {currentJob.result ? renderLegacyResult(legacyResult(currentJob) ?? {}) : null}
           </>
         )}
       </div>
