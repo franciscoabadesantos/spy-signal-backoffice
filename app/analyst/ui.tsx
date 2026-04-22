@@ -114,6 +114,21 @@ function formatPercent(value: number | null | undefined, digits = 2): string {
   return `${(value * 100).toFixed(digits)}%`
 }
 
+function formatEarningsSession(value?: string | null): string {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return '—'
+  const lower = normalized.toLowerCase()
+  if (lower === '20:00:00' || lower === 'post_market' || lower === 'after_market') return 'After Market'
+  if (lower === '09:30:00' || lower === 'pre_market' || lower === 'before_market') return 'Pre Market'
+  return normalized
+}
+
+function formatEarningsTrend(value?: string | null): string {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (!normalized || normalized === 'market_only') return '—'
+  return String(value)
+}
+
 function statusClass(status: JobStatus): string {
   return `badge ${status}`
 }
@@ -286,7 +301,7 @@ function renderSignalResult(result: SignalAnalysisResult) {
             </div>
             <div>
               <label>Session</label>
-              <div>{nextEvent.session ?? '—'}</div>
+              <div>{formatEarningsSession(nextEvent.session)}</div>
             </div>
             <div>
               <label>Days Until</label>
@@ -314,7 +329,7 @@ function renderSignalResult(result: SignalAnalysisResult) {
             </div>
             <div>
               <label>Trend</label>
-              <div>{history.trend ?? '—'}</div>
+              <div>{formatEarningsTrend(history.trend)}</div>
             </div>
           </div>
         </details>
