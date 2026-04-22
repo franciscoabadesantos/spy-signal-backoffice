@@ -20,6 +20,35 @@ type SignalAnalysisResult = {
     confidence?: number | null
     next_earnings_date?: string | null
   }
+  market?: {
+    last_price?: number | null
+    as_of_date?: string | null
+    return_1d_pct?: number | null
+    return_1m_pct?: number | null
+    return_3m_pct?: number | null
+    return_1y_pct?: number | null
+    distance_from_20d_ma_pct?: number | null
+    distance_from_50d_ma_pct?: number | null
+    distance_from_200d_ma_pct?: number | null
+    drawdown_from_252d_high_pct?: number | null
+    volatility_20d_pct?: number | null
+    volume_vs_20d_avg?: number | null
+  }
+  earnings?: {
+    next_event?: {
+      earnings_date?: string | null
+      session?: string | null
+      days_until?: number | null
+    }
+    history?: {
+      recent_quarters?: number | null
+      beat_count_4q?: number | null
+      miss_count_4q?: number | null
+      avg_surprise_pct_4q?: number | null
+      last_surprise_pct?: number | null
+      trend?: string | null
+    }
+  }
   signal?: {
     stance?: string | null
     drivers?: string[] | null
@@ -75,6 +104,16 @@ function formatConfidence(value: number | null | undefined): string {
   return `${Math.round(value * 100)}%`
 }
 
+function formatNumber(value: number | null | undefined, digits = 3): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  return value.toFixed(digits)
+}
+
+function formatPercent(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  return `${(value * 100).toFixed(digits)}%`
+}
+
 function statusClass(status: JobStatus): string {
   return `badge ${status}`
 }
@@ -100,6 +139,10 @@ function legacyResult(job: AnalysisJob): LegacyAnalysisResult | null {
 function renderSignalResult(result: SignalAnalysisResult) {
   const summary = result.summary ?? {}
   const signal = result.signal ?? {}
+  const market = result.market ?? {}
+  const earnings = result.earnings ?? {}
+  const nextEvent = earnings.next_event ?? {}
+  const history = earnings.history ?? {}
   const warnings = Array.isArray(result.warnings) ? result.warnings : []
   const drivers = Array.isArray(signal.drivers) ? signal.drivers : []
   const risks = Array.isArray(signal.risks) ? signal.risks : []
@@ -175,6 +218,106 @@ function renderSignalResult(result: SignalAnalysisResult) {
       <div style={{ marginTop: 16 }}>
         <h4>Narrative</h4>
         <p>{result.summary_text ?? '—'}</p>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <details>
+          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Market Details</summary>
+          <div className="row" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', marginTop: 12 }}>
+            <div>
+              <label>Last Price</label>
+              <div>{formatNumber(market.last_price, 3)}</div>
+            </div>
+            <div>
+              <label>As-of Date</label>
+              <div>{formatShortDate(market.as_of_date)}</div>
+            </div>
+            <div>
+              <label>Return 1D</label>
+              <div>{formatPercent(market.return_1d_pct)}</div>
+            </div>
+            <div>
+              <label>Return 1M</label>
+              <div>{formatPercent(market.return_1m_pct)}</div>
+            </div>
+            <div>
+              <label>Return 3M</label>
+              <div>{formatPercent(market.return_3m_pct)}</div>
+            </div>
+            <div>
+              <label>Return 1Y</label>
+              <div>{formatPercent(market.return_1y_pct)}</div>
+            </div>
+            <div>
+              <label>Distance From 20D MA</label>
+              <div>{formatPercent(market.distance_from_20d_ma_pct)}</div>
+            </div>
+            <div>
+              <label>Distance From 50D MA</label>
+              <div>{formatPercent(market.distance_from_50d_ma_pct)}</div>
+            </div>
+            <div>
+              <label>Distance From 200D MA</label>
+              <div>{formatPercent(market.distance_from_200d_ma_pct)}</div>
+            </div>
+            <div>
+              <label>Drawdown From 52W High</label>
+              <div>{formatPercent(market.drawdown_from_252d_high_pct)}</div>
+            </div>
+            <div>
+              <label>Volatility 20D</label>
+              <div>{formatPercent(market.volatility_20d_pct)}</div>
+            </div>
+            <div>
+              <label>Volume vs 20D Avg</label>
+              <div>{formatNumber(market.volume_vs_20d_avg, 3)}</div>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <details>
+          <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Earnings Details</summary>
+          <div className="row" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', marginTop: 12 }}>
+            <div>
+              <label>Next Earnings Date</label>
+              <div>{formatShortDate(nextEvent.earnings_date)}</div>
+            </div>
+            <div>
+              <label>Session</label>
+              <div>{nextEvent.session ?? '—'}</div>
+            </div>
+            <div>
+              <label>Days Until</label>
+              <div>{nextEvent.days_until ?? '—'}</div>
+            </div>
+            <div>
+              <label>Recent Quarters</label>
+              <div>{history.recent_quarters ?? '—'}</div>
+            </div>
+            <div>
+              <label>Beat Count (4Q)</label>
+              <div>{history.beat_count_4q ?? '—'}</div>
+            </div>
+            <div>
+              <label>Miss Count (4Q)</label>
+              <div>{history.miss_count_4q ?? '—'}</div>
+            </div>
+            <div>
+              <label>Avg Surprise (4Q)</label>
+              <div>{formatPercent(history.avg_surprise_pct_4q)}</div>
+            </div>
+            <div>
+              <label>Last Surprise</label>
+              <div>{formatPercent(history.last_surprise_pct)}</div>
+            </div>
+            <div>
+              <label>Trend</label>
+              <div>{history.trend ?? '—'}</div>
+            </div>
+          </div>
+        </details>
       </div>
 
       <div style={{ marginTop: 16 }}>
