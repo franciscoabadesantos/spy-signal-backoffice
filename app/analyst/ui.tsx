@@ -158,6 +158,7 @@ function renderSignalResult(result: SignalAnalysisResult) {
   const earnings = result.earnings ?? {}
   const nextEvent = earnings.next_event ?? {}
   const history = earnings.history ?? {}
+  const isMarketOnlyInstrument = signal.stance === 'market_only' || history.trend === 'market_only'
   const warnings = Array.isArray(result.warnings) ? result.warnings : []
   const drivers = Array.isArray(signal.drivers) ? signal.drivers : []
   const risks = Array.isArray(signal.risks) ? signal.risks : []
@@ -309,15 +310,15 @@ function renderSignalResult(result: SignalAnalysisResult) {
             </div>
             <div>
               <label>Recent Quarters</label>
-              <div>{history.recent_quarters ?? '—'}</div>
+              <div>{isMarketOnlyInstrument ? '—' : (history.recent_quarters ?? '—')}</div>
             </div>
             <div>
               <label>Beat Count (4Q)</label>
-              <div>{history.beat_count_4q ?? '—'}</div>
+              <div>{isMarketOnlyInstrument ? '—' : (history.beat_count_4q ?? '—')}</div>
             </div>
             <div>
               <label>Miss Count (4Q)</label>
-              <div>{history.miss_count_4q ?? '—'}</div>
+              <div>{isMarketOnlyInstrument ? '—' : (history.miss_count_4q ?? '—')}</div>
             </div>
             <div>
               <label>Avg Surprise (4Q)</label>
