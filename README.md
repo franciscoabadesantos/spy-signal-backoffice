@@ -6,7 +6,8 @@ Admin-only operational console (separate app) for analyst and data-ops workflows
 
 - Clerk-authenticated access
 - Email allowlist admin authorization (`ADMIN_EMAIL_ALLOWLIST`)
-- Analyst job creation (`ticker_snapshot`, `coverage_report`)
+- Analyst job creation (`ticker_snapshot`, `coverage_report`, `ticker_signal_v1`)
+- Research experiment launch and inspection backed by `finance-backend` (`/research`)
 - Job status polling and persisted result rendering
 - Recent jobs history with failed-job retry
 - Data Ops health calendar (`/data-ops`)
@@ -22,9 +23,16 @@ Copy `.env.example` to `.env.local` and set:
 - `CLERK_SECRET_KEY`
 - `ADMIN_EMAIL_ALLOWLIST` (comma-separated, lowercase email list)
 - `BACKEND_BASE_URL`
-- `BACKEND_SERVICE_TOKEN` (optional)
+- `BACKEND_SERVICE_TOKEN` (required for authenticated backend research/admin calls)
 - `MODEL_REGISTRY_API_URL` (for `/registry`, for example `http://localhost:8000`)
 - `MODEL_REGISTRY_API_TIMEOUT_SECONDS` (optional, defaults to `10`)
+
+## Boundaries
+
+- `/research` launches and inspects orchestrated research experiments through `finance-backend`.
+- `/registry` remains read-only inspection over the `finance-model-registry` HTTP API.
+- Backoffice does not execute feature engineering, ML training, strategy construction, backtests, or orchestrator logic.
+- Backoffice does not directly access backend Supabase tables, registry DB tables, or other internal databases.
 
 ## Model Registry Views
 
@@ -46,6 +54,20 @@ MODEL_REGISTRY_API_URL=http://localhost:8000 npm run dev
 ```
 
 Then open `/registry` while the `finance-model-registry` API is running. If `MODEL_REGISTRY_API_URL` is missing, unavailable, times out, or returns a stable registry error payload, the UI renders a clear error state instead of attempting any write action.
+
+Registry API auth headers are not yet wired in this pass. The current registry integration supports `MODEL_REGISTRY_API_URL` and timeout configuration only.
+
+## Research Views
+
+The `/research` area is an admin UI for launching and observing orchestrated research experiments through these backend routes:
+
+- `POST /analyst/research/experiments`
+- `GET /analyst/research/experiments`
+- `GET /analyst/research/experiments/{experiment_id}`
+- `GET /analyst/research/experiments/{experiment_id}/events`
+- `GET /analyst/research/experiments/{experiment_id}/artifacts`
+
+The browser never receives `BACKEND_SERVICE_TOKEN` directly. All research requests go through Next server route handlers in this repo.
 
 ## Development
 
@@ -72,6 +94,6 @@ Recommended Vercel production environment variables:
 - `NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up`
 - `ADMIN_EMAIL_ALLOWLIST`
 - `BACKEND_BASE_URL`
-- `BACKEND_SERVICE_TOKEN` (if backend expects bearer auth)
+- `BACKEND_SERVICE_TOKEN`
 - `MODEL_REGISTRY_API_URL`
 - `MODEL_REGISTRY_API_TIMEOUT_SECONDS`
