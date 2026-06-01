@@ -24,6 +24,8 @@ Copy `.env.example` to `.env.local` and set:
 - `ADMIN_EMAIL_ALLOWLIST` (comma-separated, lowercase email list)
 - `BACKEND_BASE_URL`
 - `BACKEND_SERVICE_TOKEN` (required for authenticated backend research/admin calls)
+- `CF_ACCESS_CLIENT_ID` (optional for local localhost dev, required when `finance-backend` is behind Cloudflare Access)
+- `CF_ACCESS_CLIENT_SECRET` (optional for local localhost dev, required when `finance-backend` is behind Cloudflare Access)
 - `MODEL_REGISTRY_API_URL` (for `/registry`, for example `http://localhost:8000`)
 - `MODEL_REGISTRY_API_TIMEOUT_SECONDS` (optional, defaults to `10`)
 
@@ -68,6 +70,7 @@ The `/research` area is an admin UI for launching and observing orchestrated res
 - `GET /analyst/research/experiments/{experiment_id}/artifacts`
 
 The browser never receives `BACKEND_SERVICE_TOKEN` directly. All research requests go through Next server route handlers in this repo.
+When configured, those server-side research proxy handlers also attach `CF-Access-Client-Id` and `CF-Access-Client-Secret` for Cloudflare Access. If the Cloudflare vars are unset, the same research proxies still work for local development against an unprotected localhost backend.
 
 ## Development
 
@@ -95,5 +98,7 @@ Recommended Vercel production environment variables:
 - `ADMIN_EMAIL_ALLOWLIST`
 - `BACKEND_BASE_URL`
 - `BACKEND_SERVICE_TOKEN`
+- `CF_ACCESS_CLIENT_ID`
+- `CF_ACCESS_CLIENT_SECRET`
 - `MODEL_REGISTRY_API_URL`
 - `MODEL_REGISTRY_API_TIMEOUT_SECONDS`

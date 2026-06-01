@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { mapAuthErrorStatus, requireAdminUser } from '@/lib/admin-auth'
-import { proxyBackendJson } from '@/lib/backend-client'
+import { proxyResearchBackendJson } from '@/lib/backend-client'
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    return await proxyBackendJson({
+    return await proxyResearchBackendJson({
       path: '/analyst/research/experiments',
       method: 'GET',
       searchParams: request.nextUrl.searchParams,
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    return await proxyBackendJson({
+    return await proxyResearchBackendJson({
       path: '/analyst/research/experiments',
       method: 'POST',
       body,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { mapAuthErrorStatus, requireAdminUser } from '@/lib/admin-auth'
-import { proxyBackendJson } from '@/lib/backend-client'
+import { proxyResearchBackendJson } from '@/lib/backend-client'
 
 export async function GET(request: NextRequest, context: { params: Promise<{ experimentId: string }> }) {
   try {
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ exp
   }
 
   try {
-    return await proxyBackendJson({
+    return await proxyResearchBackendJson({
       path: `/analyst/research/experiments/${encodeURIComponent(experimentId)}/artifacts`,
       method: 'GET',
       searchParams: request.nextUrl.searchParams,

@@ -5,14 +5,37 @@ type ProxyBackendJsonOptions = {
   method?: 'GET' | 'POST'
   searchParams?: URLSearchParams
   body?: unknown
+  requireBackendServiceToken?: boolean
+  includeCloudflareAccess?: boolean
 }
 
-function backendServiceToken(): string {
-  return (
+function backendServiceToken(required = false): string {
+  const token = (
     process.env.BACKEND_SERVICE_TOKEN
     || process.env.FINANCE_BACKEND_SERVICE_TOKEN
     || ''
   ).trim()
+  if (!token && required) {
+    throw new Error('BACKEND_SERVICE_TOKEN_MISSING')
+  }
+  return token
+}
+
+function cloudflareAccessHeaders(): HeadersInit {
+  const clientId = (process.env.CF_ACCESS_CLIENT_ID || '').trim()
+  const clientSecret = (process.env.CF_ACCESS_CLIENT_SECRET || '').trim()
+
+  if (!clientId && !clientSecret) {
+    return {}
+  }
+  if (!clientId || !clientSecret) {
+    throw new Error('CF_ACCESS_SERVICE_TOKEN_INCOMPLETE')
+  }
+
+  return {
+    'CF-Access-Client-Id': clientId,
+    'CF-Access-Client-Secret': clientSecret,
+  }
 }
 
 export function backendBaseUrl(): string {
@@ -23,15 +46,27 @@ export function backendBaseUrl(): string {
   return base.replace(/\/$/, '')
 }
 
-export function backendHeaders(includeJsonContentType = true): HeadersInit {
+export function backendHeaders({
+  includeJsonContentType = true,
+  requireBackendServiceToken = false,
+  includeCloudflareAccess = false,
+}: {
+  includeJsonContentType?: boolean
+  requireBackendServiceToken?: boolean
+  includeCloudflareAccess?: boolean
+} = {}): HeadersInit {
   const headers: HeadersInit = {}
   if (includeJsonContentType) {
     headers['Content-Type'] = 'application/json'
   }
 
-  const token = backendServiceToken()
+  const token = backendServiceToken(requireBackendServiceToken)
   if (token) {
     headers.Authorization = `Bearer ${token}`
+  }
+
+  if (includeCloudflareAccess) {
+    Object.assign(headers, cloudflareAccessHeaders())
   }
 
   return headers
@@ -42,6 +77,8 @@ export async function proxyBackendJson({
   method = 'GET',
   searchParams,
   body,
+  requireBackendServiceToken = false,
+  includeCloudflareAccess = false,
 }: ProxyBackendJsonOptions): Promise<NextResponse> {
   const url = new URL(`${backendBaseUrl()}${path}`)
   if (searchParams) {
@@ -52,7 +89,11 @@ export async function proxyBackendJson({
 
   const upstream = await fetch(url, {
     method,
-    headers: backendHeaders(method !== 'GET'),
+    headers: backendHeaders({
+      includeJsonContentType: method !== 'GET',
+      requireBackendServiceToken,
+      includeCloudflareAccess,
+    }),
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: 'no-store',
   })
@@ -73,5 +114,13 @@ export async function proxyBackendJson({
   return new NextResponse(text, {
     status: upstream.status,
     headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+export async function proxyResearchBackendJson(options: Omit<ProxyBackendJsonOptions, 'requireBackendServiceToken' | 'includeCloudflareAccess'>): Promise<NextResponse> {
+  return proxyBackendJson({
+    ...options,
+    requireBackendServiceToken: true,
+    includeCloudflareAccess: true,
   })
 }
