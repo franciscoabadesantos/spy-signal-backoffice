@@ -1,13 +1,15 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useEffectEvent, useMemo, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { startTransition, useEffect, useEffectEvent, useMemo, useState } from 'react'
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
 type ResearchExperiment = {
   experiment_id: string
   backend_job_id?: string | null
+  worker_job_id?: string | null
   status?: string | null
   requested_by?: string | null
   experiment_name?: string | null
@@ -24,6 +26,7 @@ type ResearchExperiment = {
   started_at?: string | null
   finished_at?: string | null
   error_message?: string | null
+  config_json?: JsonValue
   result_json?: JsonValue
   result?: JsonValue
   candidate_id?: string | null
@@ -38,6 +41,9 @@ type ResearchExperiment = {
 }
 
 type ResearchEvent = {
+  event_id?: string | null
+  experiment_id?: string | null
+  backend_job_id?: string | null
   created_at?: string | null
   event_type?: string | null
   step?: string | null
@@ -49,6 +55,9 @@ type ResearchEvent = {
 }
 
 type ResearchArtifact = {
+  artifact_id?: string | null
+  experiment_id?: string | null
+  backend_job_id?: string | null
   created_at?: string | null
   artifact_type?: string | null
   artifact_ref?: string | null
@@ -119,7 +128,7 @@ function normalizeExperiment(payload: unknown): ResearchExperiment | null {
 }
 
 function normalizeExperiments(payload: unknown): ResearchExperiment[] {
-  return readListPayload<ResearchExperiment>(payload, ['experiments', 'items', 'results']).filter(
+  return readListPayload<ResearchExperiment>(payload, ['jobs', 'experiments', 'items', 'results']).filter(
     (item) => typeof item?.experiment_id === 'string'
   )
 }
@@ -182,6 +191,10 @@ function readExperimentJson(experiment: ResearchExperiment): unknown {
   return readExperimentValue(experiment, ['result_json', 'result'])
 }
 
+function readExperimentConfigJson(experiment: ResearchExperiment): unknown {
+  return readExperimentValue(experiment, ['config_json'])
+}
+
 function readPayloadJson(value: ResearchEvent | ResearchArtifact): unknown {
   return value.payload_json ?? value.payload ?? null
 }
@@ -220,7 +233,25 @@ function readLineageField(experiment: ResearchExperiment, kind: 'feature_snapsho
 }
 
 function statusClass(value: unknown): string {
-  return `badge ${String(value ?? '').trim().toLowerCase()}`
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'queued' || normalized === 'running' || normalized === 'completed' || normalized === 'failed') {
+    return `badge ${normalized}`
+  }
+  return 'badge'
+}
+
+function readApiError(payload: unknown, fallback: string): string {
+  const record = asRecord(payload)
+  if (!record) return fallback
+  const detail = record.detail
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail
+  }
+  const error = record.error
+  if (typeof error === 'string' && error.trim()) {
+    return error
+  }
+  return fallback
 }
 
 function JsonDetails({ title, value }: { title: string; value: unknown }) {
@@ -237,6 +268,9 @@ function JsonDetails({ title, value }: { title: string; value: unknown }) {
 }
 
 export default function ResearchConsole({ adminEmail }: { adminEmail: string }) {
+  const pathname = usePathname()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [requestedBy, setRequestedBy] = useState(adminEmail)
   const [experimentName, setExperimentName] = useState('')
   const [experimentVersion, setExperimentVersion] = useState('')
@@ -259,30 +293,48 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   const [loadingExperiments, setLoadingExperiments] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const selectedExperimentIdFromUrl = trimOrNull(searchParams.get('experimentId') ?? '')
+
+  function setExperimentRoute(experimentId: string | null) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (experimentId) {
+      params.set('experimentId', experimentId)
+    } else {
+      params.delete('experimentId')
+    }
+    const query = params.toString()
+    startTransition(() => {
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+    })
+  }
 
   async function loadExperiments(options: { preferredExperimentId?: string | null } = {}) {
     setLoadingExperiments(true)
+    setError(null)
     try {
       const response = await fetch('/api/research/experiments?limit=50', { cache: 'no-store' })
       const payload = await response.json()
       if (!response.ok) {
-        throw new Error(payload?.error ?? 'Failed to load experiments')
+        throw new Error(readApiError(payload, 'Failed to load experiments'))
       }
 
       const list = normalizeExperiments(payload)
       setExperiments(list)
 
-      const preferredExperimentId = options.preferredExperimentId ?? selectedExperimentId ?? currentExperiment?.experiment_id ?? null
+      const preferredExperimentId = options.preferredExperimentId ?? selectedExperimentIdFromUrl ?? selectedExperimentId ?? currentExperiment?.experiment_id ?? null
       const hasPreferred = preferredExperimentId ? list.some((experiment) => experiment.experiment_id === preferredExperimentId) : false
       const nextExperiment = hasPreferred
         ? list.find((experiment) => experiment.experiment_id === preferredExperimentId) ?? null
-        : (list[0] ?? null)
+        : null
 
       setSelectedExperimentId(nextExperiment?.experiment_id ?? null)
       if (!nextExperiment) {
         setCurrentExperiment(null)
         setEvents([])
         setArtifacts([])
+        if (preferredExperimentId) {
+          setExperimentRoute(null)
+        }
       } else if (!currentExperiment || currentExperiment.experiment_id !== nextExperiment.experiment_id) {
         setCurrentExperiment(nextExperiment)
       }
@@ -297,7 +349,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     const response = await fetch(`/api/research/experiments/${encodeURIComponent(experimentId)}`, { cache: 'no-store' })
     const payload = await response.json()
     if (!response.ok) {
-      throw new Error(payload?.error ?? 'Failed to load experiment detail')
+      throw new Error(readApiError(payload, 'Failed to load experiment detail'))
     }
 
     const experiment = normalizeExperiment(payload)
@@ -312,7 +364,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     const response = await fetch(`/api/research/experiments/${encodeURIComponent(experimentId)}/events`, { cache: 'no-store' })
     const payload = await response.json()
     if (!response.ok) {
-      throw new Error(payload?.error ?? 'Failed to load experiment events')
+      throw new Error(readApiError(payload, 'Failed to load experiment events'))
     }
     return normalizeEvents(payload)
   }
@@ -321,13 +373,14 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     const response = await fetch(`/api/research/experiments/${encodeURIComponent(experimentId)}/artifacts`, { cache: 'no-store' })
     const payload = await response.json()
     if (!response.ok) {
-      throw new Error(payload?.error ?? 'Failed to load experiment artifacts')
+      throw new Error(readApiError(payload, 'Failed to load experiment artifacts'))
     }
     return normalizeArtifacts(payload)
   }
 
   async function loadExperimentBundle(experimentId: string) {
     setLoadingDetail(true)
+    setError(null)
     try {
       const [experiment, loadedEvents, loadedArtifacts] = await Promise.all([
         loadExperimentDetail(experimentId),
@@ -383,7 +436,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
       })
       const body = await response.json()
       if (!response.ok) {
-        throw new Error(body?.error ?? 'Failed to create experiment')
+        throw new Error(readApiError(body, 'Failed to create experiment'))
       }
 
       const createdExperiment = normalizeExperiment(body)
@@ -391,6 +444,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
       if (createdExperiment) {
         setCurrentExperiment(createdExperiment)
       }
+      setExperimentRoute(preferredExperimentId)
       await loadExperiments({ preferredExperimentId })
       if (preferredExperimentId) {
         setSelectedExperimentId(preferredExperimentId)
@@ -444,27 +498,34 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      loadExperimentsEffect()
+      loadExperimentsEffect({ preferredExperimentId: selectedExperimentIdFromUrl })
     }, 0)
     return () => clearTimeout(timer)
-  }, [])
+  }, [selectedExperimentIdFromUrl])
 
   useEffect(() => {
-    if (!selectedExperimentId) return
     const timer = setTimeout(() => {
-      loadExperimentBundleEffect(selectedExperimentId)
+      if (!selectedExperimentIdFromUrl) {
+        setSelectedExperimentId(null)
+        setCurrentExperiment(null)
+        setEvents([])
+        setArtifacts([])
+        return
+      }
+      setSelectedExperimentId(selectedExperimentIdFromUrl)
+      loadExperimentBundleEffect(selectedExperimentIdFromUrl)
     }, 0)
     return () => clearTimeout(timer)
-  }, [selectedExperimentId])
+  }, [selectedExperimentIdFromUrl])
 
   useEffect(() => {
-    if (!selectedExperimentId || !isActiveStatus(currentExperiment?.status)) return
+    if (!selectedExperimentIdFromUrl || !isActiveStatus(currentExperiment?.status)) return
     const timer = setInterval(() => {
-      loadExperimentsEffect({ preferredExperimentId: selectedExperimentId })
-      loadExperimentBundleEffect(selectedExperimentId)
+      loadExperimentsEffect({ preferredExperimentId: selectedExperimentIdFromUrl })
+      loadExperimentBundleEffect(selectedExperimentIdFromUrl)
     }, 4000)
     return () => clearInterval(timer)
-  }, [selectedExperimentId, currentExperiment?.status])
+  }, [selectedExperimentIdFromUrl, currentExperiment?.status])
 
   const sortedExperiments = useMemo(() => {
     return [...experiments].sort((a, b) => toTimestamp(b.created_at) - toTimestamp(a.created_at))
@@ -480,6 +541,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
 
   const candidateId = currentExperiment ? readCandidateId(currentExperiment) : null
   const bundleId = currentExperiment ? readBundleId(currentExperiment) : null
+  const configJsonValue = currentExperiment ? readExperimentConfigJson(currentExperiment) : null
   const resultJson = currentExperiment ? readExperimentJson(currentExperiment) : null
 
   return (
@@ -647,6 +709,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
                           onClick={() => {
                             setCurrentExperiment(experiment)
                             setSelectedExperimentId(experiment.experiment_id)
+                            setExperimentRoute(experiment.experiment_id)
                           }}
                         >
                           {selectedExperimentId === experiment.experiment_id ? 'Selected' : 'Open'}
@@ -661,55 +724,89 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
         ) : null}
       </div>
 
-      <div className="card">
-        <h3>Experiment Detail</h3>
-        {loadingDetail ? <p className="small">Loading detail...</p> : null}
-        {!currentExperiment ? (
-          <p className="small">Select an experiment to inspect it.</p>
-        ) : (
-          <>
-            <div className="meta">
-              <span className={statusClass(currentExperiment.status)}>{renderText(currentExperiment.status)}</span>
-              <span className="small">experiment_id: {currentExperiment.experiment_id}</span>
-              <span className="small">backend_job_id: {readBackendJobId(currentExperiment)}</span>
+      {selectedExperimentId && currentExperiment ? (
+        <>
+          <div
+            aria-hidden="true"
+            className="drawer-backdrop"
+            onClick={() => {
+              setSelectedExperimentId(null)
+              setExperimentRoute(null)
+            }}
+          />
+          <aside aria-label="Research experiment detail" className="drawer-shell">
+            <div className="drawer-header">
+              <div>
+                <h3 style={{ marginBottom: 6 }}>Experiment Detail</h3>
+                <div className="meta">
+                  <span className={statusClass(currentExperiment.status)}>{renderText(currentExperiment.status)}</span>
+                  <span className="small">experiment_id: {currentExperiment.experiment_id}</span>
+                </div>
+              </div>
+              <button
+                className="secondary drawer-close"
+                type="button"
+                onClick={() => {
+                  setSelectedExperimentId(null)
+                  setExperimentRoute(null)
+                }}
+              >
+                Close
+              </button>
             </div>
 
-            <div className="field-grid" style={{ marginTop: 12 }}>
-              <div>
-                <label>requested_by</label>
-                <div className="field-value">{renderText(currentExperiment.requested_by)}</div>
-              </div>
-              <div>
-                <label>experiment_name</label>
-                <div className="field-value">{renderText(currentExperiment.experiment_name)}</div>
-              </div>
-              <div>
-                <label>experiment_version</label>
-                <div className="field-value">{renderText(currentExperiment.experiment_version)}</div>
-              </div>
-              <div>
-                <label>strategy_family</label>
-                <div className="field-value">{renderText(currentExperiment.strategy_family)}</div>
-              </div>
-              <div>
-                <label>universe</label>
-                <div className="field-value">{renderText(currentExperiment.universe)}</div>
-              </div>
-              <div>
-                <label>symbols</label>
-                <div className="field-value">{Array.isArray(currentExperiment.symbols) ? currentExperiment.symbols.join(', ') : '—'}</div>
-              </div>
-              <div>
-                <label>created_at</label>
-                <div className="field-value">{formatDate(currentExperiment.created_at)}</div>
-              </div>
-              <div>
-                <label>started_at</label>
-                <div className="field-value">{formatDate(currentExperiment.started_at)}</div>
-              </div>
-              <div>
-                <label>finished_at</label>
-                <div className="field-value">{formatDate(currentExperiment.finished_at)}</div>
+            {loadingDetail ? <p className="small">Loading detail...</p> : null}
+
+            <div className="card compact-card">
+              <div className="field-grid">
+                <div>
+                  <label>backend_job_id</label>
+                  <div className="field-value">{readBackendJobId(currentExperiment)}</div>
+                </div>
+                <div>
+                  <label>worker_job_id</label>
+                  <div className="field-value">{renderText(currentExperiment.worker_job_id)}</div>
+                </div>
+                <div>
+                  <label>requested_by</label>
+                  <div className="field-value">{renderText(currentExperiment.requested_by)}</div>
+                </div>
+                <div>
+                  <label>experiment_name</label>
+                  <div className="field-value">{renderText(currentExperiment.experiment_name)}</div>
+                </div>
+                <div>
+                  <label>experiment_version</label>
+                  <div className="field-value">{renderText(currentExperiment.experiment_version)}</div>
+                </div>
+                <div>
+                  <label>strategy_family</label>
+                  <div className="field-value">{renderText(currentExperiment.strategy_family)}</div>
+                </div>
+                <div>
+                  <label>universe</label>
+                  <div className="field-value">{renderText(currentExperiment.universe)}</div>
+                </div>
+                <div>
+                  <label>symbols</label>
+                  <div className="field-value">{Array.isArray(currentExperiment.symbols) ? currentExperiment.symbols.join(', ') : '—'}</div>
+                </div>
+                <div>
+                  <label>horizon</label>
+                  <div className="field-value">{renderText(currentExperiment.horizon)}</div>
+                </div>
+                <div>
+                  <label>created_at</label>
+                  <div className="field-value">{formatDate(currentExperiment.created_at)}</div>
+                </div>
+                <div>
+                  <label>started_at</label>
+                  <div className="field-value">{formatDate(currentExperiment.started_at)}</div>
+                </div>
+                <div>
+                  <label>finished_at</label>
+                  <div className="field-value">{formatDate(currentExperiment.finished_at)}</div>
+                </div>
               </div>
             </div>
 
@@ -717,7 +814,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
               <div className="error">{currentExperiment.error_message}</div>
             ) : null}
 
-            <div className="card compact-card" style={{ marginTop: 16 }}>
+            <div className="card compact-card">
               <h4>Lineage IDs</h4>
               <div className="field-grid">
                 <div>
@@ -759,64 +856,63 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
               </div>
             </div>
 
-            <div style={{ marginTop: 16 }}>
+            <div className="card compact-card">
+              <h4>Configuration</h4>
+              <JsonDetails title="config_json" value={configJsonValue} />
               <JsonDetails title="result_json" value={resultJson} />
             </div>
-          </>
-        )}
-      </div>
 
-      <div className="card">
-        <h3>Events</h3>
-        {!currentExperiment ? (
-          <p className="small">Select an experiment to inspect events.</p>
-        ) : sortedEvents.length === 0 ? (
-          <p className="small">No events returned.</p>
-        ) : (
-          <div className="list-stack">
-            {sortedEvents.map((event, index) => (
-              <div className="list-row" key={`${event.created_at ?? 'event'}-${event.event_type ?? 'type'}-${index}`}>
-                <div>
-                  <div>
-                    <strong>{renderText(event.event_type)}</strong> · {renderText(event.step)}
-                  </div>
-                  <div className="small">{formatDate(event.created_at)} · {renderText(event.status)}</div>
-                  <div>{renderText(event.message)}</div>
+            <div className="card compact-card">
+              <h4>Event Timeline</h4>
+              {sortedEvents.length === 0 ? (
+                <p className="small">No events returned.</p>
+              ) : (
+                <div className="timeline">
+                  {sortedEvents.map((event, index) => (
+                    <div className="timeline-item" key={`${event.created_at ?? 'event'}-${event.event_id ?? index}`}>
+                      <div className="timeline-head">
+                        <strong>{renderText(event.event_type)}</strong>
+                        <span className={statusClass(event.status)}>{renderText(event.status)}</span>
+                      </div>
+                      <div className="small">
+                        {formatDate(event.created_at)} · step: {renderText(event.step)} · event_id: {renderText(event.event_id)}
+                      </div>
+                      <div>{renderText(event.message)}</div>
+                      <JsonDetails title="payload_json" value={readPayloadJson(event)} />
+                    </div>
+                  ))}
                 </div>
-                <div style={{ minWidth: 220 }}>
-                  <JsonDetails title="payload_json" value={readPayloadJson(event)} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              )}
+            </div>
 
-      <div className="card">
-        <h3>Artifacts</h3>
-        {!currentExperiment ? (
-          <p className="small">Select an experiment to inspect artifacts.</p>
-        ) : sortedArtifacts.length === 0 ? (
-          <p className="small">No artifacts returned.</p>
-        ) : (
-          <div className="list-stack">
-            {sortedArtifacts.map((artifact, index) => (
-              <div className="list-row" key={`${artifact.created_at ?? 'artifact'}-${artifact.artifact_ref ?? 'ref'}-${index}`}>
-                <div>
-                  <div>
-                    <strong>{renderText(artifact.artifact_type)}</strong> · {renderText(artifact.artifact_ref)}
-                  </div>
-                  <div className="small">{formatDate(artifact.created_at)}</div>
-                  <div className="small">artifact_hash: {renderText(artifact.artifact_hash)}</div>
+            <div className="card compact-card">
+              <h4>Artifacts</h4>
+              {sortedArtifacts.length === 0 ? (
+                <p className="small">No artifacts returned.</p>
+              ) : (
+                <div className="list-stack">
+                  {sortedArtifacts.map((artifact, index) => (
+                    <div className="list-row" key={`${artifact.created_at ?? 'artifact'}-${artifact.artifact_id ?? index}`}>
+                      <div>
+                        <div>
+                          <strong>{renderText(artifact.artifact_type)}</strong> · {renderText(artifact.artifact_ref)}
+                        </div>
+                        <div className="small">
+                          {formatDate(artifact.created_at)} · artifact_id: {renderText(artifact.artifact_id)}
+                        </div>
+                        <div className="small">artifact_hash: {renderText(artifact.artifact_hash)}</div>
+                      </div>
+                      <div style={{ minWidth: 220 }}>
+                        <JsonDetails title="payload_json" value={readPayloadJson(artifact)} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div style={{ minWidth: 220 }}>
-                  <JsonDetails title="payload_json" value={readPayloadJson(artifact)} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              )}
+            </div>
+          </aside>
+        </>
+      ) : null}
     </div>
   )
 }
