@@ -84,8 +84,71 @@ type CreateExperimentInput = {
 
 const ACTIVE_STATUSES = new Set(['queued', 'running', 'pending', 'submitted', 'created', 'in_progress'])
 const ADMIN_ACTION_STATUSES = new Set(['queued', 'running'])
+const REUSE_EXISTING_LINEAGE_CONFIG_REF = '/home/user/finance/finance-research-orchestrator/local_runtime_configs/reuse_existing_lineage.yml'
+const REUSE_EXISTING_LINEAGE_CONFIG_HASH = 'ui-auto-dispatch-reuse-existing-lineage'
+const REUSE_EXISTING_LINEAGE_CONFIG_JSON = JSON.stringify(
+  {
+    mode: 'reuse_existing_lineage',
+    feature_snapshot_id: '2',
+    ml_run_id: '29',
+    strategy_run_id: '60',
+    backtest_run_id: '39',
+  },
+  null,
+  2
+)
 
 type ResearchAdminAction = 'cancel' | 'mark-failed'
+type ExperimentTemplateId = 'custom' | 'reuse-existing-lineage-dry-run' | 'reuse-existing-lineage-full-run'
+
+type ExperimentTemplate = {
+  id: ExperimentTemplateId
+  label: string
+  warning?: string
+  values?: Omit<CreateExperimentInput, 'requested_by'>
+}
+
+const EXPERIMENT_TEMPLATES: ExperimentTemplate[] = [
+  {
+    id: 'custom',
+    label: 'Custom',
+  },
+  {
+    id: 'reuse-existing-lineage-dry-run',
+    label: 'Reuse existing lineage dry run',
+    values: {
+      experiment_name: 'ui_reuse_existing_lineage_auto_dispatch_smoke',
+      experiment_version: 'v1',
+      strategy_family: 'reuse-existing-lineage',
+      universe: 'existing-db-lineage',
+      symbols: 'SPY',
+      horizon: '5d',
+      dry_run: true,
+      registry_registration_enabled: false,
+      orchestrator_config_ref: REUSE_EXISTING_LINEAGE_CONFIG_REF,
+      orchestrator_config_hash: REUSE_EXISTING_LINEAGE_CONFIG_HASH,
+      config_json: REUSE_EXISTING_LINEAGE_CONFIG_JSON,
+    },
+  },
+  {
+    id: 'reuse-existing-lineage-full-run',
+    label: 'Reuse existing lineage full run',
+    warning: 'This will execute through the worker. Use dry run first.',
+    values: {
+      experiment_name: 'ui_reuse_existing_lineage_auto_dispatch_smoke_full_run',
+      experiment_version: 'v1',
+      strategy_family: 'reuse-existing-lineage',
+      universe: 'existing-db-lineage',
+      symbols: 'SPY',
+      horizon: '5d',
+      dry_run: false,
+      registry_registration_enabled: false,
+      orchestrator_config_ref: REUSE_EXISTING_LINEAGE_CONFIG_REF,
+      orchestrator_config_hash: REUSE_EXISTING_LINEAGE_CONFIG_HASH,
+      config_json: REUSE_EXISTING_LINEAGE_CONFIG_JSON,
+    },
+  },
+]
 
 function formatDate(value?: string | null): string {
   if (!value) return '—'
@@ -293,6 +356,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   const [registryRegistrationEnabled, setRegistryRegistrationEnabled] = useState(false)
   const [dryRun, setDryRun] = useState(true)
   const [configJson, setConfigJson] = useState('')
+  const [experimentTemplateId, setExperimentTemplateId] = useState<ExperimentTemplateId>('custom')
 
   const [experiments, setExperiments] = useState<ResearchExperiment[]>([])
   const [currentExperiment, setCurrentExperiment] = useState<ResearchExperiment | null>(null)
@@ -310,6 +374,24 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   function resetAdminActionState() {
     setAdminActionReason('')
     setAdminActionSubmitting(null)
+  }
+
+  function applyExperimentTemplate(templateId: ExperimentTemplateId) {
+    setExperimentTemplateId(templateId)
+    const template = EXPERIMENT_TEMPLATES.find((item) => item.id === templateId)
+    if (!template?.values) return
+
+    setExperimentName(template.values.experiment_name)
+    setExperimentVersion(template.values.experiment_version)
+    setStrategyFamily(template.values.strategy_family)
+    setUniverse(template.values.universe)
+    setSymbols(template.values.symbols)
+    setHorizon(template.values.horizon)
+    setOrchestratorConfigRef(template.values.orchestrator_config_ref)
+    setOrchestratorConfigHash(template.values.orchestrator_config_hash)
+    setRegistryRegistrationEnabled(template.values.registry_registration_enabled)
+    setDryRun(template.values.dry_run)
+    setConfigJson(template.values.config_json)
   }
 
   function setExperimentRoute(experimentId: string | null) {
@@ -516,6 +598,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   }
 
   function resetForm() {
+    setExperimentTemplateId('custom')
     setExperimentName('')
     setExperimentVersion('')
     setStrategyFamily('')
@@ -605,6 +688,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   const resultJson = currentExperiment ? readExperimentJson(currentExperiment) : null
   const showAdminActions = currentExperiment ? isAdminActionStatus(currentExperiment.status) : false
   const adminActionReasonTrimmed = adminActionReason.trim()
+  const selectedExperimentTemplate = EXPERIMENT_TEMPLATES.find((template) => template.id === experimentTemplateId)
 
   return (
     <div>
@@ -625,6 +709,27 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
               Clear Form
             </button>
           </div>
+        </div>
+        <div className="template-picker">
+          <div>
+            <label htmlFor="experimentTemplate">Template</label>
+            <select
+              id="experimentTemplate"
+              value={experimentTemplateId}
+              onChange={(event) => applyExperimentTemplate(event.target.value as ExperimentTemplateId)}
+            >
+              {EXPERIMENT_TEMPLATES.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {selectedExperimentTemplate?.warning ? (
+            <div className="warning" role="alert">
+              {selectedExperimentTemplate.warning}
+            </div>
+          ) : null}
         </div>
         <form onSubmit={onSubmit}>
           <div className="row">

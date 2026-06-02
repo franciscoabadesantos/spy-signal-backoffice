@@ -229,6 +229,16 @@ button:disabled {
   color: #991b1b;
 }
 
+.warning {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 pre {
   white-space: pre-wrap;
   background: #0f172a;
@@ -401,6 +411,14 @@ pre {
   max-width: 420px;
 }
 
+.template-picker {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  align-items: end;
+  gap: 12px;
+  margin: 12px 0;
+}
+
 @media (max-width: 900px) {
   .row {
     grid-template-columns: 1fr;
@@ -418,6 +436,7 @@ pre {
   .metric-grid,
   .field-grid,
   .admin-action-row,
+  .template-picker,
   .inline-filter {
     grid-template-columns: 1fr;
   }
