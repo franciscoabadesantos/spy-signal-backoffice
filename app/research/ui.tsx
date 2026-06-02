@@ -83,6 +83,9 @@ type CreateExperimentInput = {
 }
 
 const ACTIVE_STATUSES = new Set(['queued', 'running', 'pending', 'submitted', 'created', 'in_progress'])
+const ADMIN_ACTION_STATUSES = new Set(['queued', 'running'])
+
+type ResearchAdminAction = 'cancel' | 'mark-failed'
 
 function formatDate(value?: string | null): string {
   if (!value) return '—'
@@ -149,6 +152,10 @@ function toTimestamp(value?: string | null): number {
 
 function isActiveStatus(value?: string | null): boolean {
   return ACTIVE_STATUSES.has(String(value ?? '').trim().toLowerCase())
+}
+
+function isAdminActionStatus(value?: string | null): boolean {
+  return ADMIN_ACTION_STATUSES.has(String(value ?? '').trim().toLowerCase())
 }
 
 function trimOrNull(value: string): string | null {
@@ -237,6 +244,9 @@ function statusClass(value: unknown): string {
   if (normalized === 'queued' || normalized === 'running' || normalized === 'completed' || normalized === 'failed') {
     return `badge ${normalized}`
   }
+  if (normalized === 'cancelled' || normalized === 'canceled') {
+    return 'badge cancelled'
+  }
   return 'badge'
 }
 
@@ -293,7 +303,14 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   const [loadingExperiments, setLoadingExperiments] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [adminActionReason, setAdminActionReason] = useState('')
+  const [adminActionSubmitting, setAdminActionSubmitting] = useState<ResearchAdminAction | null>(null)
   const selectedExperimentIdFromUrl = trimOrNull(searchParams.get('experimentId') ?? '')
+
+  function resetAdminActionState() {
+    setAdminActionReason('')
+    setAdminActionSubmitting(null)
+  }
 
   function setExperimentRoute(experimentId: string | null) {
     const params = new URLSearchParams(searchParams.toString())
@@ -398,6 +415,13 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     }
   }
 
+  async function refreshExperimentAfterAdminAction(experimentId: string) {
+    await Promise.all([
+      loadExperiments({ preferredExperimentId: experimentId }),
+      loadExperimentBundle(experimentId),
+    ])
+  }
+
   async function submitExperiment(input: CreateExperimentInput) {
     setSubmitting(true)
     setError(null)
@@ -456,6 +480,41 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     }
   }
 
+  async function submitExperimentAdminAction(action: ResearchAdminAction) {
+    if (!currentExperiment) return
+    if (!isAdminActionStatus(currentExperiment.status)) return
+
+    const reason = adminActionReason.trim()
+    if (!reason) {
+      setError('A reason is required before changing a job status.')
+      return
+    }
+
+    const experimentId = currentExperiment.experiment_id
+    const actor = trimOrNull(adminEmail) ?? trimOrNull(String(currentExperiment.requested_by ?? '')) ?? 'backoffice-admin'
+
+    setAdminActionSubmitting(action)
+    setError(null)
+    try {
+      const response = await fetch(`/api/research/experiments/${encodeURIComponent(experimentId)}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor, reason }),
+      })
+      const body = await response.json()
+      if (!response.ok) {
+        throw new Error(readApiError(body, `Failed to ${action === 'cancel' ? 'cancel' : 'mark failed'} job`))
+      }
+
+      setAdminActionReason('')
+      await refreshExperimentAfterAdminAction(experimentId)
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Failed to update job status')
+    } finally {
+      setAdminActionSubmitting(null)
+    }
+  }
+
   function resetForm() {
     setExperimentName('')
     setExperimentVersion('')
@@ -505,6 +564,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
 
   useEffect(() => {
     const timer = setTimeout(() => {
+      resetAdminActionState()
       if (!selectedExperimentIdFromUrl) {
         setSelectedExperimentId(null)
         setCurrentExperiment(null)
@@ -543,6 +603,8 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   const bundleId = currentExperiment ? readBundleId(currentExperiment) : null
   const configJsonValue = currentExperiment ? readExperimentConfigJson(currentExperiment) : null
   const resultJson = currentExperiment ? readExperimentJson(currentExperiment) : null
+  const showAdminActions = currentExperiment ? isAdminActionStatus(currentExperiment.status) : false
+  const adminActionReasonTrimmed = adminActionReason.trim()
 
   return (
     <div>
@@ -707,6 +769,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
                           className="secondary"
                           type="button"
                           onClick={() => {
+                            resetAdminActionState()
                             setCurrentExperiment(experiment)
                             setSelectedExperimentId(experiment.experiment_id)
                             setExperimentRoute(experiment.experiment_id)
@@ -730,6 +793,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
             aria-hidden="true"
             className="drawer-backdrop"
             onClick={() => {
+              resetAdminActionState()
               setSelectedExperimentId(null)
               setExperimentRoute(null)
             }}
@@ -747,6 +811,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
                 className="secondary drawer-close"
                 type="button"
                 onClick={() => {
+                  resetAdminActionState()
                   setSelectedExperimentId(null)
                   setExperimentRoute(null)
                 }}
@@ -756,6 +821,41 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
             </div>
 
             {loadingDetail ? <p className="small">Loading detail...</p> : null}
+
+            {showAdminActions ? (
+              <div className="card compact-card">
+                <h4>Job Actions</h4>
+                <div style={{ marginTop: 10 }}>
+                  <label htmlFor="researchAdminActionReason">Reason</label>
+                  <textarea
+                    id="researchAdminActionReason"
+                    rows={3}
+                    value={adminActionReason}
+                    onChange={(event) => setAdminActionReason(event.target.value)}
+                    disabled={adminActionSubmitting !== null}
+                    required
+                  />
+                </div>
+                <div className="admin-action-row">
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => void submitExperimentAdminAction('cancel')}
+                    disabled={adminActionSubmitting !== null || !adminActionReasonTrimmed}
+                  >
+                    {adminActionSubmitting === 'cancel' ? 'Cancelling...' : 'Cancel job'}
+                  </button>
+                  <button
+                    className="danger"
+                    type="button"
+                    onClick={() => void submitExperimentAdminAction('mark-failed')}
+                    disabled={adminActionSubmitting !== null || !adminActionReasonTrimmed}
+                  >
+                    {adminActionSubmitting === 'mark-failed' ? 'Marking failed...' : 'Mark failed'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             <div className="card compact-card">
               <div className="field-grid">
