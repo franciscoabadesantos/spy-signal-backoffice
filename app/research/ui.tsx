@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { type ReactNode, useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { isProxyDiagnostic, readApiError } from '@/lib/api-error'
+import { requestClientJson } from '@/lib/client-json'
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
@@ -247,15 +248,6 @@ function stageClass(status: StageStatus): string {
   if (status === 'warning') return 'badge queued'
   if (status === 'unavailable') return 'badge cancelled'
   return 'badge'
-}
-
-async function requestJson(url: string, init?: RequestInit): Promise<unknown> {
-  const response = await fetch(url, { cache: 'no-store', ...init })
-  const payload = await response.json()
-  if (!response.ok) {
-    throw payload
-  }
-  return payload
 }
 
 function deriveUniverseLabel(mode: UniverseMode, symbols: string[]): string {
@@ -569,7 +561,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     setLoadingExperiments(true)
     setError(null)
     try {
-      const payload = await requestJson(`/api/research/experiments?limit=${DEFAULT_LIMIT}`)
+      const payload = await requestClientJson(`/api/research/experiments?limit=${DEFAULT_LIMIT}`)
       const list = normalizeExperiments(payload)
       setExperiments(list)
       if (selectedExperimentId && !list.some((experiment) => experiment.experiment_id === selectedExperimentId)) {
@@ -586,7 +578,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   }
 
   async function loadExperimentDetail(experimentId: string) {
-    const payload = await requestJson(`/api/research/experiments/${encodeURIComponent(experimentId)}`)
+    const payload = await requestClientJson(`/api/research/experiments/${encodeURIComponent(experimentId)}`)
     const experiment = normalizeExperiment(payload)
     if (!experiment) {
       throw new Error('Experiment detail response was missing experiment data.')
@@ -595,12 +587,12 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   }
 
   async function loadExperimentEvents(experimentId: string) {
-    const payload = await requestJson(`/api/research/experiments/${encodeURIComponent(experimentId)}/events`)
+    const payload = await requestClientJson(`/api/research/experiments/${encodeURIComponent(experimentId)}/events`)
     return normalizeEvents(payload)
   }
 
   async function loadExperimentArtifacts(experimentId: string) {
-    const payload = await requestJson(`/api/research/experiments/${encodeURIComponent(experimentId)}/artifacts`)
+    const payload = await requestClientJson(`/api/research/experiments/${encodeURIComponent(experimentId)}/artifacts`)
     return normalizeArtifacts(payload)
   }
 
@@ -637,7 +629,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
         config_json: configJson,
       }
 
-      const created = await requestJson('/api/research/experiments', {
+      const created = await requestClientJson('/api/research/experiments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -670,7 +662,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     setAdminActionSubmitting(action)
     setError(null)
     try {
-      await requestJson(`/api/research/experiments/${encodeURIComponent(currentExperiment.experiment_id)}/${action}`, {
+      await requestClientJson(`/api/research/experiments/${encodeURIComponent(currentExperiment.experiment_id)}/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor: adminEmail, reason }),

@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { isProxyDiagnostic, readApiError } from '@/lib/api-error'
+import { requestClientJson } from '@/lib/client-json'
 
 type JobStatus = 'queued' | 'running' | 'completed' | 'failed'
 type DataOpsDomain = 'market' | 'fundamentals' | 'earnings' | 'macro' | 'release-calendar'
@@ -79,15 +80,6 @@ function renderValue(value: unknown): string {
   if (value === null || value === undefined || value === '') return '—'
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value)
   return JSON.stringify(value)
-}
-
-async function requestJson(url: string, init?: RequestInit): Promise<unknown> {
-  const response = await fetch(url, { cache: 'no-store', ...init })
-  const payload = await response.json()
-  if (!response.ok) {
-    throw payload
-  }
-  return payload
 }
 
 function RequestErrorCard({ error }: { error: unknown }) {
@@ -214,7 +206,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
     setLoadingJobs(true)
     setError(null)
     try {
-      const payload = await requestJson('/api/data-ops/rebuild-jobs?limit=80')
+      const payload = await requestClientJson('/api/data-ops/rebuild-jobs?limit=80')
       const record = payload as { jobs?: DataOpsJob[] }
       setJobs(Array.isArray(record.jobs) ? record.jobs : [])
     } catch (requestError) {
@@ -226,7 +218,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
 
   async function loadJob(jobId: string) {
     try {
-      const payload = await requestJson(`/api/data-ops/rebuild-jobs/${encodeURIComponent(jobId)}`)
+      const payload = await requestClientJson(`/api/data-ops/rebuild-jobs/${encodeURIComponent(jobId)}`)
       setCurrentJob(payload as DataOpsJob)
     } catch (requestError) {
       setError(requestError)
@@ -242,7 +234,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
       if (healthEndDate) query.set('end_date', healthEndDate)
       if (healthTicker.trim()) query.set('ticker', healthTicker.trim().toUpperCase())
       if (healthDomains.length > 0) query.set('domains', healthDomains.join(','))
-      const payload = await requestJson(`/api/data-ops/health?${query.toString()}`)
+      const payload = await requestClientJson(`/api/data-ops/health?${query.toString()}`)
       setHealth(payload as HealthResponse)
     } catch (requestError) {
       setError(requestError)
@@ -255,7 +247,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
     setSubmitting(true)
     setError(null)
     try {
-      const payload = await requestJson('/api/data-ops/rebuild-jobs', {
+      const payload = await requestClientJson('/api/data-ops/rebuild-jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -286,7 +278,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
     setSubmitting(true)
     setError(null)
     try {
-      const payload = await requestJson('/api/data-ops/series/macro', {
+      const payload = await requestClientJson('/api/data-ops/series/macro', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -312,7 +304,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
     setSubmitting(true)
     setError(null)
     try {
-      const payload = await requestJson('/api/data-ops/series/release-calendar', {
+      const payload = await requestClientJson('/api/data-ops/series/release-calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -336,7 +328,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
     setSubmitting(true)
     setError(null)
     try {
-      const payload = await requestJson(`/api/data-ops/rebuild-jobs/${encodeURIComponent(jobId)}/retry`, {
+      const payload = await requestClientJson(`/api/data-ops/rebuild-jobs/${encodeURIComponent(jobId)}/retry`, {
         method: 'POST',
       })
       setCurrentJob(payload as DataOpsJob)

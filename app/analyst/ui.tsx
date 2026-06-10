@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { isProxyDiagnostic, readApiError } from '@/lib/api-error'
+import { requestClientJson } from '@/lib/client-json'
 
 type AnalysisType = 'ticker_snapshot' | 'coverage_report' | 'ticker_signal_v1'
 type JobStatus = 'queued' | 'running' | 'completed' | 'failed'
@@ -404,12 +405,9 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
   async function loadJobs() {
     setLoadingJobs(true)
     try {
-      const response = await fetch('/api/analyst/jobs?limit=30', { cache: 'no-store' })
-      const payload = await response.json()
-      if (!response.ok) {
-        throw payload
-      }
-      const list = Array.isArray(payload?.jobs) ? (payload.jobs as AnalysisJob[]) : []
+      const payload = await requestClientJson('/api/analyst/jobs?limit=30')
+      const record = payload as { jobs?: AnalysisJob[] }
+      const list = Array.isArray(record.jobs) ? record.jobs : []
       setJobs(list)
     } catch (requestError) {
       setError(requestError)
@@ -420,11 +418,7 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
 
   async function loadJob(jobId: string) {
     try {
-      const response = await fetch(`/api/analyst/jobs/${encodeURIComponent(jobId)}`, { cache: 'no-store' })
-      const payload = await response.json()
-      if (!response.ok) {
-        throw payload
-      }
+      const payload = await requestClientJson(`/api/analyst/jobs/${encodeURIComponent(jobId)}`)
       setCurrentJob(payload as AnalysisJob)
     } catch (requestError) {
       setError(requestError)
@@ -435,7 +429,7 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
     setSubmitting(true)
     setError(null)
     try {
-      const response = await fetch('/api/analyst/jobs', {
+      const payload = await requestClientJson('/api/analyst/jobs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -445,10 +439,6 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
           analysis_type: input.analysisType,
         }),
       })
-      const payload = await response.json()
-      if (!response.ok) {
-        throw payload
-      }
 
       const job = payload as AnalysisJob
       setCurrentJob(job)
