@@ -17,14 +17,15 @@ export default async function HomePage() {
       <div className="hero-panel">
         <div>
           <p className="eyebrow">Backoffice Operations Control Plane</p>
-          <h1>Start with data readiness, then inspect research, analyst validation, registry evidence, and diagnostics.</h1>
+          <h1>Start with data readiness, then inspect research, analyst validation, official signals, frontoffice activity, registry evidence, operations, and diagnostics.</h1>
           <p className="hero-copy">
-            Backoffice is the internal control plane for the finance product. Check whether the data is good enough to trust, inspect active research and frontoffice-style validation, review registry evidence, and use diagnostics where backend or worker visibility is missing.
+            Backoffice is the internal control plane for the finance product. Check whether the data is good enough to trust, inspect active research and frontoffice-style validation, review official signal behavior and registry evidence, and use operations or diagnostics where backend or worker visibility is missing.
           </p>
         </div>
         <div className="hero-actions">
           <Link className="hero-link" href="/data-ops">Open Data Ops</Link>
           <Link className="hero-link secondary-link" href="/research">Open Research Lab</Link>
+          <Link className="hero-link secondary-link" href="/signals">Open Signals</Link>
           <Link className="hero-link secondary-link" href="/diagnostics">Open Diagnostics</Link>
         </div>
       </div>
@@ -36,7 +37,7 @@ export default async function HomePage() {
           <div>
             <h2>Control Room Operations Overview</h2>
             <p className="small">
-              Data quality comes before research confidence. Research results are evidence, not automatic product decisions. Analyst validation is a first-class control surface. Registry is review-only today, and Backoffice exposes missing backend contracts instead of hiding them.
+              Data quality comes before research confidence. Research results are evidence, not automatic product decisions. Analyst validation, official signal inspection, frontoffice activity, registry review, and operations visibility are first-class control surfaces. Backoffice exposes missing backend contracts instead of hiding them.
             </p>
           </div>
         </div>
@@ -73,6 +74,33 @@ export default async function HomePage() {
           gap="Backend gap: add dedicated analyst/frontoffice validation contract health to the operations snapshot."
         />
         <OperationCard
+          href="/signals"
+          title="Official Signals"
+          controls="Latest screener signals, ticker signal history, last flips, flip events by date, and composition from existing finance-backend contracts."
+          matters="Official signal behavior needs a real workspace now, even though active model lineage, paper candidates, and forward evaluation are still missing."
+          availabilityLabel="Signal contracts"
+          availabilityDetail="Not included in the existing health snapshot. The /signals workspace uses thin admin proxies to existing finance-backend signal endpoints."
+          gap="Backend gaps remain for official model lineage, forward return evaluation, paper/shadow candidates, comparisons, and decay proposals."
+        />
+        <OperationCard
+          href="/frontoffice"
+          title="Frontoffice / User Research"
+          controls="All watched tickers, watchlist subscriptions, user-id based watchlist lookup, user AI research runs, and run detail lookup."
+          matters="Backoffice needs visibility into what users and frontoffice-style flows are researching, even while all-user admin views are missing."
+          availabilityLabel="Site contracts"
+          availabilityDetail="Not included in the existing health snapshot. The /frontoffice workspace uses thin admin proxies to existing site/watchlist and site/ai-research endpoints."
+          gap="Backend gaps remain for all-user research lists, user search, usage summaries, moderation controls, alert dashboards, and analytics summaries."
+        />
+        <OperationCard
+          href="/operations"
+          title="Queue & Worker Operations"
+          controls="Analyst jobs, Data Ops rebuild jobs, Research experiments, and a clearly labeled UI-only old queued/running heuristic."
+          matters="Operators need one place to inspect visible job surfaces while true queue depth and worker heartbeat are still missing."
+          availabilityLabel="Existing job list APIs"
+          availabilityDetail="Uses existing local Backoffice APIs for analyst jobs, data-ops rebuild jobs, and research experiments."
+          gap="Not worker health: queue depth, worker heartbeat, dispatch lag, dead-letter tasks, and unified retry/cancel need backend contracts."
+        />
+        <OperationCard
           href="/registry"
           title="Registry / Evidence"
           controls="Candidates, bundles, readiness, promotion history, active pointers, evidence drilldowns, and lineage visibility."
@@ -91,6 +119,15 @@ export default async function HomePage() {
           availabilityStatus={worstStatus([backendProbe?.status, registryProbe?.status])}
           availabilityDetail="Health snapshot covers backend reachability, registry proxy reachability, and selected protected route probes."
           gap="Backend gap: unified queue and worker health is not exposed yet."
+        />
+        <OperationCard
+          href="/contracts"
+          title="Backend Contract Inventory"
+          controls="Backoffice-owned inventory of available, proxied, not-yet-wired, and missing backend contracts."
+          matters="Operators and developers need one place to see what is real backend data, what is UI-only, and what blocks the next control-plane capabilities."
+          availabilityLabel="Inventory source"
+          availabilityDetail="Static Backoffice-owned inventory until finance-backend exposes contract metadata."
+          gap="Backend gap: no contract metadata endpoint exists yet."
         />
       </div>
 
@@ -127,30 +164,49 @@ export default async function HomePage() {
           </div>
           <div className="list-row">
             <div>
-              <strong>5. Backend route, registry proxy, or worker visibility is broken</strong>
-              <div className="small">Open Diagnostics. Use protected route probes and raw debug entry points, and treat missing queue or worker visibility as an explicit backend gap.</div>
+              <strong>5. Need to inspect official signal behavior</strong>
+              <div className="small">Open Signals. Inspect current screener signals, ticker history, flips, and composition while treating official evaluation gaps as missing backend contracts.</div>
             </div>
-            <Link className="text-link" href="/diagnostics">Open Diagnostics</Link>
+            <Link className="text-link" href="/signals">Open Signals</Link>
           </div>
           <div className="list-row">
             <div>
-              <strong>6. Need official signal, campaign, user research, or registry mutation controls</strong>
-              <div className="small">Use the planned-surface inventory below. These are not implemented as fake functionality; they identify backend contracts needed for the next product layers.</div>
+              <strong>6. Need user/frontoffice research visibility</strong>
+              <div className="small">Open Frontoffice. Inspect all watched tickers, subscriptions, and user-id based AI research runs as far as current backend contracts allow.</div>
             </div>
+            <Link className="text-link" href="/frontoffice">Open Frontoffice</Link>
+          </div>
+          <div className="list-row">
+            <div>
+              <strong>7. Need job or queue/worker visibility</strong>
+              <div className="small">Open Operations for current job surfaces. Open Diagnostics when protected routes or backend reachability are broken.</div>
+            </div>
+            <div className="meta">
+              <Link className="text-link" href="/operations">Open Operations</Link>
+              <Link className="text-link" href="/diagnostics">Open Diagnostics</Link>
+            </div>
+          </div>
+          <div className="list-row">
+            <div>
+              <strong>8. Need to know whether a backend contract exists</strong>
+              <div className="small">Open Contracts. It separates available/proxied contracts from missing backend capabilities.</div>
+            </div>
+            <Link className="text-link" href="/contracts">Open Contracts</Link>
           </div>
         </div>
       </div>
 
       <div className="card">
-        <h2>Missing / Planned Control Surfaces</h2>
+        <h2>Partial Workspaces / Remaining Gaps</h2>
         <p className="small">
-          These surfaces are required for the full control plane, but they are not implemented as working features on this page. The current state is shown honestly as backend gaps or planned Backoffice capabilities.
+          These are now Backoffice workspaces where possible. Each workspace uses existing finance-backend data and shows missing backend contracts inside the relevant page.
         </p>
         <div className="planned-grid">
           <PlannedSurface
             title="Official Signals"
+            href="/signals"
             why="We cannot know whether a model is truly good only from backtests. Operators need official, paper, and live signal evaluation, forward performance, decay detection, and comparison against active models."
-            status="Not implemented in Backoffice."
+            status="Workspace exists at /signals with current signal inspection. Full official evaluation is not implemented."
             gaps={[
               'official signal overview',
               'active official model or candidate lineage',
@@ -163,8 +219,9 @@ export default async function HomePage() {
           />
           <PlannedSurface
             title="Frontoffice / User Research Control"
+            href="/frontoffice"
             why="Backoffice must see and control what people are researching through the frontoffice or product experience."
-            status="Not implemented as a dedicated Backoffice surface."
+            status="Workspace exists at /frontoffice with watchlist and user-id based AI research visibility. All-user admin views are not implemented."
             gaps={[
               'user research runs and lists',
               'user intent and query visibility',
@@ -176,8 +233,9 @@ export default async function HomePage() {
           />
           <PlannedSurface
             title="Queue & Worker Operations"
+            href="/operations"
             why="Data Ops, Analyst jobs, and Research jobs all rely on queues and workers, but Backoffice currently sees only per-job polling and stuck heuristics."
-            status="Not implemented as a unified queue or worker dashboard."
+            status="Workspace exists at /operations with current visible job lists. True queue and worker health are not implemented."
             gaps={[
               'queue depth',
               'worker heartbeat',
@@ -212,8 +270,9 @@ export default async function HomePage() {
           />
           <PlannedSurface
             title="Backend Contract Inventory"
+            href="/contracts"
             why="Operators need one place to see which backend contracts exist, which are missing, and which control-plane capabilities are blocked."
-            status="Not implemented."
+            status="Workspace exists at /contracts as a Backoffice-owned inventory until backend metadata exists."
             gaps={[
               'backend contract metadata endpoint',
               'Backoffice-maintained static gap inventory until backend supports metadata',
@@ -271,11 +330,13 @@ function OperationCard({
 
 function PlannedSurface({
   title,
+  href,
   why,
   status,
   gaps,
 }: {
   title: string
+  href?: string
   why: string
   status: string
   gaps: string[]
@@ -288,6 +349,7 @@ function PlannedSurface({
       </div>
       <p className="small"><strong>Why needed:</strong> {why}</p>
       <p className="small"><strong>Current status:</strong> {status}</p>
+      {href ? <Link className="text-link" href={href}>Open workspace</Link> : null}
       <div className="small"><strong>Backend gaps likely needed later:</strong></div>
       <ul className="plain-list small">
         {gaps.map((gap) => (
