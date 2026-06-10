@@ -47,6 +47,61 @@ type GapIssue = {
   missingDays: number
 }
 
+type BaseCheck = {
+  status: 'ok' | 'partial' | 'unsupported' | 'warning' | 'unavailable' | 'stale' | 'missing' | string
+  severity?: string
+}
+
+type DuplicatesResponse = BaseCheck & {
+  duplicate_group_count?: number
+  duplicate_row_count?: number
+  items?: Array<{
+    table?: string
+    key_fields?: string[]
+    duplicate_count?: number
+    sample_rows?: unknown[]
+  }>
+}
+
+type FreshnessResponse = BaseCheck & {
+  summary_counts?: { ok?: number; warning?: number; stale?: number; unavailable?: number }
+  items?: Array<{
+    domain?: string
+    identifier?: string
+    latest_available_date?: string
+    latest_updated_at?: string
+    expected_latest_date?: string
+    lag_days?: number
+    severity?: string
+    reason?: string
+  }>
+}
+
+type SourceComparisonResponse = BaseCheck & {
+  comparison_summary?: string
+  unsupported_reason?: string
+  items?: Array<{
+    left_source?: string
+    right_source?: string
+    differences?: Record<string, unknown>
+    unsupported_reason?: string
+  }>
+}
+
+type MacroReleaseGapsResponse = BaseCheck & {
+  series_checked?: number
+  missing_releases?: number
+  items?: Array<{
+    series_key?: string
+    observation_period?: string
+    expected_release_timestamp?: string
+    present?: boolean
+    observed_first_available_at?: string
+    severity?: string
+    reason?: string
+  }>
+}
+
 const DOMAIN_OPTIONS: DataOpsDomain[] = ['market', 'fundamentals', 'earnings', 'macro', 'release-calendar']
 
 function formatDate(value?: string | null): string {
@@ -60,10 +115,19 @@ function statusClass(status: JobStatus): string {
   return `badge ${status}`
 }
 
-function healthClass(status: string): string {
+function healthClass(status?: string): string {
   if (status === 'ok') return 'cell-ok'
   if (status === 'missing') return 'cell-missing'
   return 'cell-na'
+}
+
+function statusColorClass(status?: string): string {
+  const norm = String(status ?? '').trim().toLowerCase()
+  if (norm === 'ok') return 'badge completed'
+  if (norm === 'warning' || norm === 'partial') return 'badge running'
+  if (norm === 'unsupported' || norm === 'unavailable') return 'badge queued'
+  if (norm === 'missing' || norm === 'stale' || norm === 'error' || norm === 'failed') return 'badge failed'
+  return 'badge'
 }
 
 function toTodayIso(): string {
@@ -150,6 +214,10 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
   const [submitting, setSubmitting] = useState(false)
 
   const [health, setHealth] = useState<HealthResponse | null>(null)
+  const [duplicates, setDuplicates] = useState<DuplicatesResponse | null>(null)
+  const [freshness, setFreshness] = useState<FreshnessResponse | null>(null)
+  const [sourceComparison, setSourceComparison] = useState<SourceComparisonResponse | null>(null)
+  const [macroGaps, setMacroGaps] = useState<MacroReleaseGapsResponse | null>(null)
   const [loadingHealth, setLoadingHealth] = useState(false)
   const [healthStartDate, setHealthStartDate] = useState(shiftIsoDays(-30))
   const [healthEndDate, setHealthEndDate] = useState(toTodayIso())
@@ -236,6 +304,25 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
       if (healthDomains.length > 0) query.set('domains', healthDomains.join(','))
       const payload = await requestClientJson(`/api/data-ops/health?${query.toString()}`)
       setHealth(payload as HealthResponse)
+
+      const dQuery = new URLSearchParams()
+      if (healthStartDate) dQuery.set('start_date', healthStartDate)
+      if (healthEndDate) dQuery.set('end_date', healthEndDate)
+      if (healthTicker.trim()) dQuery.set('ticker', healthTicker.trim().toUpperCase())
+      const dom = healthDomains[0] || 'market'
+      dQuery.set('domain', dom)
+
+      const mQuery = new URLSearchParams()
+      if (healthStartDate) mQuery.set('start_date', healthStartDate)
+      if (healthEndDate) mQuery.set('end_date', healthEndDate)
+      if (healthTicker.trim()) mQuery.set('series_key', healthTicker.trim().toUpperCase())
+
+      await Promise.allSettled([
+        requestClientJson(`/api/data-ops/duplicates?${dQuery.toString()}`).then(res => setDuplicates(res as DuplicatesResponse)),
+        requestClientJson(`/api/data-ops/freshness?${dQuery.toString()}`).then(res => setFreshness(res as FreshnessResponse)),
+        requestClientJson(`/api/data-ops/source-comparison?${dQuery.toString()}`).then(res => setSourceComparison(res as SourceComparisonResponse)),
+        requestClientJson(`/api/data-ops/macro-release-gaps?${mQuery.toString()}`).then(res => setMacroGaps(res as MacroReleaseGapsResponse)),
+      ])
     } catch (requestError) {
       setError(requestError)
     } finally {
@@ -471,17 +558,137 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
 
         <div className="card compact-card">
           <h3>Duplicates</h3>
-          <p className="small">Not yet available. The current backend does not expose duplicate-row detection by table / domain / ticker / date.</p>
+          {duplicates ? (
+            <div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                <span className={statusColorClass(duplicates.status)}>{duplicates.status}</span>
+                {duplicates.duplicate_group_count !== undefined && <span className="small">{duplicates.duplicate_group_count} groups</span>}
+                {duplicates.duplicate_row_count !== undefined && <span className="small">{duplicates.duplicate_row_count} rows</span>}
+              </div>
+              {duplicates.status === 'unsupported' ? (
+                <p className="small">Duplicates check is not available for this domain. The backend has no duplicate key contract defined yet.</p>
+              ) : null}
+              {duplicates.items && duplicates.items.length > 0 ? (
+                <div className="list-stack">
+                  {duplicates.items.slice(0, 5).map((item, idx) => (
+                    <div className="list-row" key={idx}>
+                      <div>
+                        <strong>{item.table}</strong>
+                        <div className="small">Keys: {(item.key_fields || []).join(', ')}</div>
+                      </div>
+                      <div>
+                        <div>{item.duplicate_count} duplicates</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+             <p className="small">Loading or not yet loaded.</p>
+          )}
         </div>
 
         <div className="card compact-card">
           <h3>Freshness / staleness</h3>
-          <p className="small">Not yet available. We need latest available date, latest updated timestamp, and expected latest date per domain to show freshness confidently.</p>
+          {freshness ? (
+            <div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                <span className={statusColorClass(freshness.status)}>{freshness.status}</span>
+                {freshness.summary_counts && (
+                  <span className="small">
+                    {freshness.summary_counts.stale || 0} stale, {freshness.summary_counts.unavailable || 0} unavailable
+                  </span>
+                )}
+              </div>
+              {freshness.status === 'unavailable' ? (
+                <p className="small">Latest data can be inspected, but expected-latest verdict is unavailable until calendar/cadence contracts exist.</p>
+              ) : null}
+              {freshness.items && freshness.items.length > 0 ? (
+                <div className="list-stack">
+                  {freshness.items.slice(0, 5).map((item, idx) => (
+                    <div className="list-row" key={idx}>
+                      <div>
+                        <strong>{item.identifier || item.domain}</strong>
+                        {item.reason && <div className="small">{item.reason}</div>}
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div>{item.lag_days !== undefined ? `${item.lag_days}d lag` : '—'}</div>
+                        <div className="small">Latest: {item.latest_available_date || 'N/A'}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="small">Loading or not yet loaded.</p>
+          )}
         </div>
 
         <div className="card compact-card">
           <h3>Source comparison</h3>
-          <p className="small">Not yet available. Supabase vs backend/source/Postgres comparisons require dedicated backend diff endpoints; the backoffice should not query storage backends directly.</p>
+          {sourceComparison ? (
+            <div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                <span className={statusColorClass(sourceComparison.status)}>{sourceComparison.status}</span>
+              </div>
+              {sourceComparison.comparison_summary && <p className="small">{sourceComparison.comparison_summary}</p>}
+              {sourceComparison.status === 'unsupported' ? (
+                <p className="small">{sourceComparison.unsupported_reason || 'Source comparison is not available yet because backend has no second source/mirror contract.'}</p>
+              ) : null}
+              {sourceComparison.items && sourceComparison.items.length > 0 ? (
+                <div className="list-stack">
+                  {sourceComparison.items.slice(0, 5).map((item, idx) => (
+                    <div className="list-row" key={idx}>
+                      <div>
+                        <strong>Left: {item.left_source}</strong>
+                        <div className="small">Right: {item.right_source}</div>
+                      </div>
+                      <div>
+                        {item.unsupported_reason ? <div className="small">{item.unsupported_reason}</div> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="small">Loading or not yet loaded.</p>
+          )}
+        </div>
+
+        <div className="card compact-card">
+          <h3>Macro release gaps</h3>
+          {macroGaps ? (
+            <div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                <span className={statusColorClass(macroGaps.status)}>{macroGaps.status}</span>
+                {macroGaps.missing_releases !== undefined && <span className="small">{macroGaps.missing_releases} missing</span>}
+              </div>
+              {macroGaps.status === 'partial' ? (
+                <p className="small">Macro release checks are partial because backend had to infer from release-calendar metadata or could not inspect the observed macro table.</p>
+              ) : null}
+              {macroGaps.items && macroGaps.items.length > 0 ? (
+                <div className="list-stack">
+                  {macroGaps.items.slice(0, 5).map((item, idx) => (
+                    <div className="list-row" key={idx}>
+                      <div>
+                        <strong>{item.series_key}</strong>
+                        <div className="small">Period: {item.observation_period}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div>{item.present ? 'Present' : 'Missing'}</div>
+                        <div className="small">{item.reason}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="small">Loading or not yet loaded.</p>
+          )}
         </div>
       </div>
 

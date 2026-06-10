@@ -258,6 +258,29 @@ function deriveUniverseLabel(mode: UniverseMode, symbols: string[]): string {
 }
 
 function deriveStageChecks(experiment: ResearchExperiment, events: ResearchEvent[], artifacts: ResearchArtifact[]) {
+  const stageSummary = readExperimentValue(experiment, ['stage_summary']) as unknown
+
+  if (stageSummary && typeof stageSummary === 'object') {
+    if (Array.isArray(stageSummary)) {
+      return stageSummary.map((s: any) => ({
+        name: s.name || s.stage || 'Unknown Stage',
+        status: s.status || 'unavailable',
+        note: s.note || s.evidence_missing || s.evidence || 'From backend summary',
+        detail: s.detail || ''
+      }))
+    }
+    return Object.entries(stageSummary).map(([key, val]: [string, any]) => {
+      const status = typeof val === 'string' ? val : (val?.status || 'unavailable')
+      const note = typeof val === 'string' ? 'From backend summary' : (val?.note || val?.evidence_missing || val?.evidence || 'From backend summary')
+      return {
+        name: key,
+        status,
+        note,
+        detail: val?.detail || ''
+      }
+    })
+  }
+
   const loweredEvents = events.map((event) => ({
     status: String(event.status ?? '').toLowerCase(),
     text: `${String(event.event_type ?? '')} ${String(event.step ?? '')} ${String(event.message ?? '')}`.toLowerCase(),
@@ -275,13 +298,13 @@ function deriveStageChecks(experiment: ResearchExperiment, events: ResearchEvent
     const hasWarning = matches.some((event) => event.status === 'warning')
     const hasCompleted = matches.some((event) => event.status === 'completed' || event.status === 'succeeded')
 
-    if (hasFailed) return { status: 'failed', note: 'A stage event reported failure.' }
-    if (hasCompletionField || hasArtifact || hasCompleted) return { status: 'completed', note: 'Stage evidence was returned by backend events, artifacts, or lineage fields.' }
-    if (hasRunning) return { status: 'running', note: 'The backend is still reporting this stage in flight.' }
-    if (hasWarning) return { status: 'warning', note: 'The backend returned a warning for this stage.' }
-    if (!requested) return { status: 'unavailable', note: 'This stage was not requested for the run.' }
-    if (experiment.status === 'queued') return { status: 'not started', note: 'The run is queued and no stage evidence is available yet.' }
-    return { status: 'unavailable', note: 'Backend does not expose enough structured stage evidence to prove progress here yet.' }
+    if (hasFailed) return { status: 'failed', note: 'A stage event reported failure. (derived by UI from events/artifacts/result fields)' }
+    if (hasCompletionField || hasArtifact || hasCompleted) return { status: 'completed', note: 'Stage evidence was returned by backend events, artifacts, or lineage fields. (derived by UI from events/artifacts/result fields)' }
+    if (hasRunning) return { status: 'running', note: 'The backend is still reporting this stage in flight. (derived by UI from events/artifacts/result fields)' }
+    if (hasWarning) return { status: 'warning', note: 'The backend returned a warning for this stage. (derived by UI from events/artifacts/result fields)' }
+    if (!requested) return { status: 'unavailable', note: 'This stage was not requested for the run. (derived by UI from events/artifacts/result fields)' }
+    if (experiment.status === 'queued') return { status: 'not started', note: 'The run is queued and no stage evidence is available yet. (derived by UI from events/artifacts/result fields)' }
+    return { status: 'unavailable', note: 'Backend does not expose enough structured stage evidence to prove progress here yet. (derived by UI from events/artifacts/result fields)' }
   }
 
   return [
@@ -319,6 +342,14 @@ function deriveStageChecks(experiment: ResearchExperiment, events: ResearchEvent
 }
 
 function stageReachedText(experiment: ResearchExperiment, events: ResearchEvent[], artifacts: ResearchArtifact[]): string {
+  const summary = readExperimentValue(experiment, ['stage_summary'])
+  if (summary && typeof summary === 'object' && !Array.isArray(summary)) {
+    const vals = Object.values(summary)
+    if (vals.some(v => (v as any)?.status === 'running')) return 'running'
+    const completed = vals.filter(v => (v as any)?.status === 'completed' || v === 'completed')
+    if (completed.length > 0) return `${completed.length} completed`
+  }
+
   const stages = deriveStageChecks(experiment, events, artifacts)
   const lastCompleted = [...stages].reverse().find((stage) => stage.status === 'completed' || stage.status === 'running' || stage.status === 'failed')
   return lastCompleted?.name ?? 'Not enough backend stage evidence yet'
@@ -400,11 +431,16 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   const [createdByFilter, setCreatedByFilter] = useState('')
   const [universeFilter, setUniverseFilter] = useState('')
   const [strategyFilter, setStrategyFilter] = useState('')
-  const [textFilter, setTextFilter] = useState('')
+  const [symbolFilter, setSymbolFilter] = useState('')
   const [dateFromFilter, setDateFromFilter] = useState('')
   const [dateToFilter, setDateToFilter] = useState('')
   const [hasCandidateOnly, setHasCandidateOnly] = useState(false)
   const [hasBundleOnly, setHasBundleOnly] = useState(false)
+  const [hasArtifactsOnly, setHasArtifactsOnly] = useState(false)
+  const [hasReadinessOnly, setHasReadinessOnly] = useState(false)
+  
+  const [offset, setOffset] = useState(0)
+  const [pagination, setPagination] = useState<{ limit: number; offset: number; total: number; has_more: boolean } | null>(null)
 
   const parsedSymbols = useMemo(() => parseSymbols(tickers), [tickers])
 
@@ -488,37 +524,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     [experiments]
   )
 
-  const filteredExperiments = useMemo(() => {
-    return sortedExperiments.filter((experiment) => {
-      if (statusFilter && String(experiment.status ?? '').toLowerCase() !== statusFilter.toLowerCase()) return false
-      if (createdByFilter && !String(experiment.requested_by ?? '').toLowerCase().includes(createdByFilter.toLowerCase())) return false
-      if (universeFilter) {
-        const haystack = `${String(experiment.universe ?? '')} ${(experiment.symbols ?? []).join(',')}`.toLowerCase()
-        if (!haystack.includes(universeFilter.toLowerCase())) return false
-      }
-      if (strategyFilter && !String(experiment.strategy_family ?? '').toLowerCase().includes(strategyFilter.toLowerCase())) return false
-      if (textFilter) {
-        const haystack = `${String(experiment.experiment_name ?? '')} ${String(experiment.experiment_id ?? '')} ${String(experiment.experiment_version ?? '')}`.toLowerCase()
-        if (!haystack.includes(textFilter.toLowerCase())) return false
-      }
-      if (dateFromFilter && toTimestamp(experiment.created_at) < toTimestamp(dateFromFilter)) return false
-      if (dateToFilter && toTimestamp(experiment.created_at) > toTimestamp(`${dateToFilter}T23:59:59Z`)) return false
-      if (hasCandidateOnly && !readCandidateId(experiment)) return false
-      if (hasBundleOnly && !readBundleId(experiment)) return false
-      return true
-    })
-  }, [
-    createdByFilter,
-    dateFromFilter,
-    dateToFilter,
-    hasBundleOnly,
-    hasCandidateOnly,
-    sortedExperiments,
-    statusFilter,
-    strategyFilter,
-    textFilter,
-    universeFilter,
-  ])
+  const filteredExperiments = experiments // Now handled purely by the server-side payload filtering
 
   const selectedCompareExperiment = useMemo(
     () => experiments.find((experiment) => experiment.experiment_id === compareExperimentId) ?? null,
@@ -557,13 +563,36 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     return () => clearInterval(timer)
   }, [currentExperiment?.status, selectedExperimentId])
 
-  async function loadExperiments() {
+  async function loadExperiments(newOffset: number = 0) {
     setLoadingExperiments(true)
     setError(null)
     try {
-      const payload = await requestClientJson(`/api/research/experiments?limit=${DEFAULT_LIMIT}`)
+      const q = new URLSearchParams()
+      if (statusFilter) q.set('status', statusFilter)
+      if (createdByFilter) q.set('requested_by', createdByFilter)
+      if (symbolFilter) q.set('symbol', symbolFilter)
+      if (universeFilter) q.set('universe', universeFilter)
+      if (strategyFilter) q.set('strategy_family', strategyFilter)
+      if (hasCandidateOnly) q.set('has_candidate', 'true')
+      if (hasBundleOnly) q.set('has_bundle', 'true')
+      if (hasArtifactsOnly) q.set('has_artifacts', 'true')
+      if (hasReadinessOnly) q.set('has_readiness_report', 'true')
+      if (dateFromFilter) q.set('created_from', dateFromFilter)
+      if (dateToFilter) q.set('created_to', dateToFilter)
+      q.set('limit', '50')
+      q.set('offset', String(newOffset))
+
+      const payload = await requestClientJson(`/api/research/experiments?${q.toString()}`)
       const list = normalizeExperiments(payload)
       setExperiments(list)
+      const p = (payload as { pagination?: any }).pagination
+      if (p) {
+        setPagination(p)
+        setOffset(p.offset)
+      } else {
+        setPagination(null)
+        setOffset(newOffset)
+      }
       if (selectedExperimentId && !list.some((experiment) => experiment.experiment_id === selectedExperimentId)) {
         setSelectedExperimentId(null)
       }
@@ -929,8 +958,8 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
 
         <div className="row" style={{ marginTop: 10 }}>
           <div>
-            <label htmlFor="textFilter">Text search</label>
-            <input id="textFilter" value={textFilter} onChange={(event) => setTextFilter(event.target.value)} placeholder="hypothesis, run id, version" />
+            <label htmlFor="symbolFilter">Symbol search</label>
+            <input id="symbolFilter" value={symbolFilter} onChange={(event) => setSymbolFilter(event.target.value)} placeholder="AAPL, MSFT" />
           </div>
           <div>
             <label htmlFor="dateFromFilter">Date from</label>
@@ -940,7 +969,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
             <label htmlFor="dateToFilter">Date to</label>
             <input id="dateToFilter" type="date" value={dateToFilter} onChange={(event) => setDateToFilter(event.target.value)} />
           </div>
-          <div className="checkbox-row">
+          <div className="checkbox-row" style={{ flexWrap: 'wrap' }}>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" checked={hasCandidateOnly} onChange={(event) => setHasCandidateOnly(event.target.checked)} style={{ width: 'auto' }} />
               Has candidate
@@ -949,6 +978,14 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
               <input type="checkbox" checked={hasBundleOnly} onChange={(event) => setHasBundleOnly(event.target.checked)} style={{ width: 'auto' }} />
               Has bundle
             </label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={hasArtifactsOnly} onChange={(event) => setHasArtifactsOnly(event.target.checked)} style={{ width: 'auto' }} />
+              Has artifacts
+            </label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={hasReadinessOnly} onChange={(event) => setHasReadinessOnly(event.target.checked)} style={{ width: 'auto' }} />
+              Has readiness
+            </label>
           </div>
         </div>
 
@@ -956,14 +993,18 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
           <table className="registry-table">
             <thead>
               <tr>
-                <th>Experiment group</th>
-                <th>Run</th>
+                <th>Experiment</th>
                 <th>Status</th>
-                <th>Universe / tickers</th>
-                <th>Stage reached</th>
-                <th>Candidate / bundle</th>
+                <th>Universe / symbols</th>
+                <th>Strategy</th>
                 <th>Created by</th>
                 <th>Created at</th>
+                <th>Stage overall</th>
+                <th>Artifacts count</th>
+                <th>Events count</th>
+                <th>Candidate?</th>
+                <th>Bundle?</th>
+                <th>Readiness?</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -974,19 +1015,20 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
                     <strong>{renderText(experiment.experiment_name)}</strong>
                     <div className="small">{experiment.experiment_id}</div>
                   </td>
-                  <td>{renderText(experiment.experiment_version)}</td>
                   <td><span className={statusClass(experiment.status)}>{renderText(experiment.status)}</span></td>
                   <td>
                     <div>{renderText(experiment.universe)}</div>
                     <div className="small">{Array.isArray(experiment.symbols) ? experiment.symbols.join(', ') : '—'}</div>
                   </td>
-                  <td>{stageReachedText(experiment, [], [])}</td>
-                  <td>
-                    <div>{readCandidateId(experiment) ?? '—'}</div>
-                    <div className="small">{readBundleId(experiment) ?? '—'}</div>
-                  </td>
+                  <td>{renderText(experiment.strategy_family)}</td>
                   <td>{renderText(experiment.requested_by)}</td>
                   <td>{formatDate(experiment.created_at)}</td>
+                  <td>{stageReachedText(experiment, [], [])}</td>
+                  <td>{renderText(experiment.artifact_count)}</td>
+                  <td>{renderText(experiment.event_count)}</td>
+                  <td>{experiment.has_candidate ? 'Yes' : 'No'}</td>
+                  <td>{experiment.has_bundle ? 'Yes' : 'No'}</td>
+                  <td>{experiment.has_readiness_report ? 'Yes' : 'No'}</td>
                   <td>
                     <div className="table-actions">
                       <button className="secondary" type="button" onClick={() => setSelectedExperimentId(experiment.experiment_id)}>Open</button>
@@ -998,11 +1040,17 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
               ))}
               {!loadingExperiments && filteredExperiments.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="small">No runs matched the current filters.</td>
+                  <td colSpan={13} className="small">No runs matched the current filters.</td>
                 </tr>
               ) : null}
             </tbody>
           </table>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
+          <button className="secondary" type="button" disabled={loadingExperiments || offset === 0} onClick={() => void loadExperiments(Math.max(0, offset - 50))}>Previous Page</button>
+          <button className="secondary" type="button" disabled={loadingExperiments || !pagination?.has_more} onClick={() => void loadExperiments(offset + 50)}>Next Page</button>
+          {pagination && <span className="small">Showing {experiments.length} returned. {pagination.total !== undefined ? `Total: ${pagination.total}` : ''}</span>}
         </div>
       </div>
 
@@ -1079,7 +1127,13 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
 
             <div className="card compact-card">
               <h4>Evidence and lineage</h4>
-              <div className="field-grid">
+              {readExperimentValue(currentExperiment, ['lineage_summary']) ? (
+                <JsonDetails title="Backend lineage_summary" value={readExperimentValue(currentExperiment, ['lineage_summary'])} />
+              ) : null}
+              {readExperimentValue(currentExperiment, ['flattened_lineage_ids']) ? (
+                <JsonDetails title="Flattened lineage ids" value={readExperimentValue(currentExperiment, ['flattened_lineage_ids'])} />
+              ) : null}
+              <div className="field-grid" style={{ marginTop: 10 }}>
                 <Field label="Feature snapshot" value={renderText(readExperimentValue(currentExperiment, ['feature_snapshot_id', 'snapshot_name']))} />
                 <Field label="Snapshot version" value={renderText(readExperimentValue(currentExperiment, ['snapshot_version']))} />
                 <Field label="ML run" value={renderText(readExperimentValue(currentExperiment, ['ml_run_id']))} />
