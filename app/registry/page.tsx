@@ -6,6 +6,7 @@ import {
   CandidateFilters,
   CandidateTable,
   PromotionEventList,
+  RegistryConceptGrid,
   ReadinessReportList,
   RegistryErrorState,
   RegistryHeader,
@@ -44,13 +45,14 @@ export default async function RegistryPage({ searchParams }: RegistryPageProps) 
   return (
     <div>
       <RegistryHeader adminEmail={admin.email} />
+      <RegistryConceptGrid />
       {error ? <RegistryErrorState error={error} /> : null}
       {!error && payload ? (
         <>
           <div className="card">
             <div className="split-row">
               <div>
-                <h3>Registry Dashboard</h3>
+                <h3>Evidence Dashboard</h3>
                 <p className="small">Generated: {payload.summary.generated_at ?? '—'}</p>
               </div>
               <div className="meta">

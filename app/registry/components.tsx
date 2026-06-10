@@ -14,10 +14,16 @@ export function RegistryErrorState({ error }: { error: unknown }) {
   const title = error instanceof ModelRegistryClientError ? error.errorCode : 'registry_error'
   const message = error instanceof Error ? error.message : 'Unable to load registry data.'
   const status = error instanceof ModelRegistryClientError ? error.status : null
+  const isMissingConfig = error instanceof ModelRegistryClientError && error.errorCode === 'registry_api_not_configured'
   return (
     <div className="error">
       <strong>{title}</strong>
       <div>{message}</div>
+      {isMissingConfig ? (
+        <div className="small" style={{ marginTop: 8 }}>
+          Set `MODEL_REGISTRY_API_URL` to the finance-model-registry API base URL. After that, candidates, bundles, readiness reports, promotion history, and active pointers will appear here.
+        </div>
+      ) : null}
       {status ? <div className="small">HTTP status: {status}</div> : null}
       {error instanceof ModelRegistryClientError && Object.keys(error.details).length > 0 ? (
         <pre>{JSON.stringify(error.details, null, 2)}</pre>
@@ -35,11 +41,32 @@ export function RegistryHeader({ adminEmail }: { adminEmail: string }) {
     <div className="card">
       <div className="split-row">
         <div>
-          <h2>Model Registry</h2>
-          <p className="small">Read-only inspection over the finance-model-registry API.</p>
+          <h2>Registry / Evidence</h2>
+          <p className="small">Read-only inspection over the finance-model-registry API. This is the candidate, bundle, readiness, promotion, and active-pointer ledger for research outputs.</p>
         </div>
         <div className="small">Admin: {adminEmail}</div>
       </div>
+    </div>
+  )
+}
+
+export function RegistryConceptGrid() {
+  const items = [
+    ['Candidates', 'Outputs produced by research runs.'],
+    ['Bundles', 'Packaged candidates plus lineage and reproducibility evidence.'],
+    ['Readiness reports', 'Checks that decide whether a candidate is reviewable.'],
+    ['Promotion history', 'Who promoted what, when, and why.'],
+    ['Active pointers', 'What the system currently treats as active.'],
+  ]
+
+  return (
+    <div className="feature-grid">
+      {items.map(([title, body]) => (
+        <div className="card compact-card" key={title}>
+          <h3>{title}</h3>
+          <p className="small">{body}</p>
+        </div>
+      ))}
     </div>
   )
 }

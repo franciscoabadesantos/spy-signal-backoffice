@@ -1,3 +1,5 @@
+import { JsonResponseParseError, readJsonResponse } from '@/lib/http-json'
+
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
 export type RegistryErrorPayload = {
@@ -291,16 +293,28 @@ export class ModelRegistryClient {
 }
 
 async function readJsonPayload(response: Response): Promise<unknown> {
-  const text = await response.text()
-  if (!text) return {}
   try {
-    return JSON.parse(text) as unknown
-  } catch {
+    return await readJsonResponse(response)
+  } catch (error) {
+    if (error instanceof JsonResponseParseError) {
+      throw new ModelRegistryClientError(
+        error.kind === 'non_json_content_type'
+          ? 'Registry API returned a non-JSON response.'
+          : 'Registry API returned an invalid JSON response.',
+        response.ok ? 502 : response.status,
+        'registry_api_invalid_response',
+        {
+          upstream_status: error.responseStatus,
+          upstream_content_type: error.contentType,
+          body: error.bodyPreview,
+        }
+      )
+    }
+
     throw new ModelRegistryClientError(
-      'Registry API returned a non-JSON response.',
+      'Registry API returned a malformed response.',
       response.ok ? 502 : response.status,
-      'registry_api_invalid_response',
-      { body: text.slice(0, 1000) }
+      'registry_api_invalid_response'
     )
   }
 }

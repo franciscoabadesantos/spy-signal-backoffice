@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { isProxyDiagnostic, readApiError } from '@/lib/api-error'
 
 type AnalysisType = 'ticker_snapshot' | 'coverage_report' | 'ticker_signal_v1'
 type JobStatus = 'queued' | 'running' | 'completed' | 'failed'
@@ -369,6 +370,22 @@ function renderLegacyResult(result: LegacyAnalysisResult) {
   )
 }
 
+function RequestErrorCard({ error }: { error: unknown }) {
+  if (isProxyDiagnostic(error)) {
+    return (
+      <div className="error">
+        <strong>{String(error.error)}</strong>
+        <div>{String(error.message)}</div>
+        {typeof error.upstreamStatus === 'number' ? <div className="small">Upstream status: {error.upstreamStatus}</div> : null}
+        {typeof error.upstreamContentType === 'string' ? <div className="small">Content-Type: {error.upstreamContentType}</div> : null}
+        {typeof error.upstreamBodyPreview === 'string' && error.upstreamBodyPreview ? <pre>{error.upstreamBodyPreview}</pre> : null}
+      </div>
+    )
+  }
+
+  return <div className="error">{readApiError(error, 'Analyst request failed.')}</div>
+}
+
 export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
   const [ticker, setTicker] = useState('AAPL')
   const [region, setRegion] = useState('us')
@@ -380,7 +397,7 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [loadingJobs, setLoadingJobs] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<unknown>(null)
 
   const activeJobId = selectedJobId ?? currentJob?.job_id ?? null
 
@@ -390,12 +407,12 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
       const response = await fetch('/api/analyst/jobs?limit=30', { cache: 'no-store' })
       const payload = await response.json()
       if (!response.ok) {
-        throw new Error(payload?.error ?? 'Failed to load jobs')
+        throw payload
       }
       const list = Array.isArray(payload?.jobs) ? (payload.jobs as AnalysisJob[]) : []
       setJobs(list)
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to load jobs')
+      setError(requestError)
     } finally {
       setLoadingJobs(false)
     }
@@ -406,11 +423,11 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
       const response = await fetch(`/api/analyst/jobs/${encodeURIComponent(jobId)}`, { cache: 'no-store' })
       const payload = await response.json()
       if (!response.ok) {
-        throw new Error(payload?.error ?? 'Failed to load job')
+        throw payload
       }
       setCurrentJob(payload as AnalysisJob)
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to load job')
+      setError(requestError)
     }
   }
 
@@ -430,7 +447,7 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
       })
       const payload = await response.json()
       if (!response.ok) {
-        throw new Error(payload?.error ?? 'Job creation failed')
+        throw payload
       }
 
       const job = payload as AnalysisJob
@@ -439,7 +456,7 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
       await loadJobs()
       return job
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to create job')
+      setError(requestError)
       return null
     } finally {
       setSubmitting(false)
@@ -506,8 +523,9 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
   return (
     <div>
       <div className="card">
-        <h2>Analyst Console</h2>
+        <h2>Analyst Smoke Tests</h2>
         <p className="small">Admin: {adminEmail}</p>
+        <p className="small">This validates backend analyst job creation and structured result rendering. It is not the main research pipeline.</p>
       </div>
 
       <div className="card">
@@ -546,7 +564,7 @@ export default function AnalystConsole({ adminEmail }: { adminEmail: string }) {
         </form>
       </div>
 
-      {error ? <div className="error">{error}</div> : null}
+      {error ? <RequestErrorCard error={error} /> : null}
 
       <div className="card">
         <h3>Current Job</h3>

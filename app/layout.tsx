@@ -20,10 +20,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <div className="brand-wrap">
                 <div className="brand">Spy Signal Backoffice</div>
                 <nav className="header-nav">
-                  <Link href="/analyst">Analyst</Link>
-                  <Link href="/research">Research</Link>
-                  <Link href="/data-ops">Data Ops</Link>
-                  <Link href="/registry">Registry</Link>
+                  <Link href="/">Control Room</Link>
+                  <Link href="/research">Research Lab</Link>
+                  <Link href="/data-ops">Data Quality</Link>
+                  <Link href="/registry">Registry / Evidence</Link>
+                  <Link href="/diagnostics">Diagnostics</Link>
                 </nav>
               </div>
               <div>

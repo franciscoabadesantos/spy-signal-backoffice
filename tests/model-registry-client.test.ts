@@ -17,7 +17,9 @@ test('registry API client parses summary response', async () => {
         active_pointer_count: 3,
         promotion_event_count: 4,
         readiness_report_count: 5,
-      }))
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
     },
   })
 
@@ -34,7 +36,10 @@ test('registry API client handles stable registry error shape', async () => {
       error_code: 'not_found',
       message: 'Unknown candidate_id: missing',
       details: { candidate_id: 'missing' },
-    }), { status: 404 }),
+    }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    }),
   })
 
   await assert.rejects(

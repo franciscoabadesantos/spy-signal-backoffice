@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { isProxyDiagnostic, readApiError } from '@/lib/api-error'
 
 type JobStatus = 'queued' | 'running' | 'completed' | 'failed'
 type DataOpsDomain = 'market' | 'fundamentals' | 'earnings' | 'macro' | 'release-calendar'
@@ -38,6 +39,13 @@ type HealthResponse = {
   summaries: Record<string, Record<string, unknown>>
 }
 
+type GapIssue = {
+  domain: string
+  startDate: string
+  endDate: string
+  missingDays: number
+}
+
 const DOMAIN_OPTIONS: DataOpsDomain[] = ['market', 'fundamentals', 'earnings', 'macro', 'release-calendar']
 
 function formatDate(value?: string | null): string {
@@ -61,27 +69,91 @@ function toTodayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function renderValue(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '—'
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value)
-  return JSON.stringify(value)
-}
-
-function readPlanBatchSize(plan: Record<string, unknown> | null): unknown {
-  if (!plan) return null
-  return plan.upsert_batch_size ?? plan.chunk_size ?? null
-}
-
 function shiftIsoDays(days: number): string {
   const now = new Date()
   now.setDate(now.getDate() + days)
   return now.toISOString().slice(0, 10)
 }
 
+function renderValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—'
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return JSON.stringify(value)
+}
+
+async function requestJson(url: string, init?: RequestInit): Promise<unknown> {
+  const response = await fetch(url, { cache: 'no-store', ...init })
+  const payload = await response.json()
+  if (!response.ok) {
+    throw payload
+  }
+  return payload
+}
+
+function RequestErrorCard({ error }: { error: unknown }) {
+  if (!error) return null
+  if (isProxyDiagnostic(error)) {
+    return (
+      <div className="error">
+        <strong>{String(error.error)}</strong>
+        <div>{String(error.message)}</div>
+        {typeof error.upstreamStatus === 'number' ? <div className="small">Upstream status: {error.upstreamStatus}</div> : null}
+        {typeof error.upstreamContentType === 'string' ? <div className="small">Content-Type: {error.upstreamContentType}</div> : null}
+        {typeof error.upstreamBodyPreview === 'string' && error.upstreamBodyPreview ? <pre>{error.upstreamBodyPreview}</pre> : null}
+      </div>
+    )
+  }
+  return <div className="error">{readApiError(error, 'Data quality request failed.')}</div>
+}
+
+function summarizeHealth(health: HealthResponse | null): Array<{ domain: string; coveredDays: number; missingDays: number; windowRows: number }> {
+  if (!health) return []
+  return Object.entries(health.summaries).map(([domain, summary]) => ({
+    domain,
+    coveredDays: Number(summary.covered_days ?? 0),
+    missingDays: Number(summary.missing_days ?? 0),
+    windowRows: Number(summary.window_rows ?? 0),
+  }))
+}
+
+function deriveGapIssues(health: HealthResponse | null): GapIssue[] {
+  if (!health) return []
+  const issues: GapIssue[] = []
+
+  for (const domain of Object.keys(health.summaries)) {
+    let currentStart: string | null = null
+    let currentEnd: string | null = null
+    let missingDays = 0
+
+    for (const row of health.rows) {
+      const cell = row.domains[domain]
+      if (cell?.status === 'missing') {
+        currentStart ??= row.date
+        currentEnd = row.date
+        missingDays += 1
+        continue
+      }
+
+      if (currentStart && currentEnd) {
+        issues.push({ domain, startDate: currentStart, endDate: currentEnd, missingDays })
+      }
+      currentStart = null
+      currentEnd = null
+      missingDays = 0
+    }
+
+    if (currentStart && currentEnd) {
+      issues.push({ domain, startDate: currentStart, endDate: currentEnd, missingDays })
+    }
+  }
+
+  return issues.sort((a, b) => b.missingDays - a.missingDays)
+}
+
 export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
   const [jobs, setJobs] = useState<DataOpsJob[]>([])
   const [currentJob, setCurrentJob] = useState<DataOpsJob | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<unknown>(null)
   const [loadingJobs, setLoadingJobs] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
@@ -118,173 +190,6 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
 
   const activeJobId = currentJob?.job_id ?? null
 
-  async function loadJobs() {
-    setLoadingJobs(true)
-    try {
-      const response = await fetch('/api/data-ops/rebuild-jobs?limit=80', { cache: 'no-store' })
-      const payload = await response.json()
-      if (!response.ok) {
-        throw new Error(payload?.error ?? 'Failed to load jobs')
-      }
-      const list = Array.isArray(payload?.jobs) ? (payload.jobs as DataOpsJob[]) : []
-      setJobs(list)
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to load jobs')
-    } finally {
-      setLoadingJobs(false)
-    }
-  }
-
-  async function loadJob(jobId: string) {
-    try {
-      const response = await fetch(`/api/data-ops/rebuild-jobs/${encodeURIComponent(jobId)}`, { cache: 'no-store' })
-      const payload = await response.json()
-      if (!response.ok) {
-        throw new Error(payload?.error ?? 'Failed to load job')
-      }
-      setCurrentJob(payload as DataOpsJob)
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to load job')
-    }
-  }
-
-  async function loadHealth() {
-    setLoadingHealth(true)
-    try {
-      const query = new URLSearchParams()
-      if (healthStartDate) query.set('start_date', healthStartDate)
-      if (healthEndDate) query.set('end_date', healthEndDate)
-      if (healthTicker.trim()) query.set('ticker', healthTicker.trim().toUpperCase())
-      if (healthDomains.length > 0) query.set('domains', healthDomains.join(','))
-      const response = await fetch(`/api/data-ops/health?${query.toString()}`, { cache: 'no-store' })
-      const payload = await response.json()
-      if (!response.ok) {
-        throw new Error(payload?.error ?? 'Failed to load health view')
-      }
-      setHealth(payload as HealthResponse)
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to load health view')
-    } finally {
-      setLoadingHealth(false)
-    }
-  }
-
-  async function submitRebuildJob() {
-    setSubmitting(true)
-    setError(null)
-    try {
-      const payload = {
-        domain,
-        mode,
-        dry_run: dryRun,
-        confirm_phrase: confirmPhrase || null,
-        requested_scope_label: `${domain} / ${scopeType}`,
-        scope: {
-          scope_type: scopeType,
-          region: scopeType === 'region' ? scopeRegion.trim().toLowerCase() : null,
-          ticker: scopeType === 'ticker' ? scopeTicker.trim().toUpperCase() : null,
-          start_date: scopeType === 'date_range' || domain === 'market' || domain === 'macro' || domain === 'release-calendar' ? scopeStartDate : null,
-          end_date: scopeType === 'date_range' || domain === 'market' || domain === 'macro' || domain === 'release-calendar' ? scopeEndDate : null,
-        },
-      }
-      const response = await fetch('/api/data-ops/rebuild-jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const body = await response.json()
-      if (!response.ok) {
-        throw new Error(body?.detail ?? body?.error ?? 'Failed to create rebuild job')
-      }
-      const job = body as DataOpsJob
-      setCurrentJob(job)
-      await loadJobs()
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to create rebuild job')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function submitMacroSeriesJob() {
-    setSubmitting(true)
-    setError(null)
-    try {
-      const response = await fetch('/api/data-ops/series/macro', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          series_key: macroSeriesKey.trim(),
-          source_provider: macroSourceProvider,
-          source_code: macroSourceCode.trim(),
-          frequency: macroFrequency,
-          dry_run: macroDryRun,
-          backfill_start_date: macroBackfillStart || null,
-          backfill_end_date: macroBackfillEnd || null,
-        }),
-      })
-      const body = await response.json()
-      if (!response.ok) {
-        throw new Error(body?.detail ?? body?.error ?? 'Failed to create macro series job')
-      }
-      setCurrentJob(body as DataOpsJob)
-      await loadJobs()
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to create macro series job')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function submitReleaseSeriesJob() {
-    setSubmitting(true)
-    setError(null)
-    try {
-      const response = await fetch('/api/data-ops/series/release-calendar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          series_key: releaseSeriesKey.trim(),
-          observation_period: releaseObservationPeriod.trim(),
-          observation_date: releaseObservationDate.trim(),
-          scheduled_release_timestamp_utc: releaseTimestampUtc.trim(),
-          dry_run: releaseDryRun,
-        }),
-      })
-      const body = await response.json()
-      if (!response.ok) {
-        throw new Error(body?.detail ?? body?.error ?? 'Failed to create release series job')
-      }
-      setCurrentJob(body as DataOpsJob)
-      await loadJobs()
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to create release series job')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function retryJob(jobId: string) {
-    setSubmitting(true)
-    setError(null)
-    try {
-      const response = await fetch(`/api/data-ops/rebuild-jobs/${encodeURIComponent(jobId)}/retry`, {
-        method: 'POST',
-      })
-      const body = await response.json()
-      if (!response.ok) {
-        throw new Error(body?.detail ?? body?.error ?? 'Failed to retry job')
-      }
-      const job = body as DataOpsJob
-      setCurrentJob(job)
-      await loadJobs()
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to retry job')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -305,48 +210,215 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
     return () => clearInterval(timer)
   }, [activeJobId, currentJob?.status])
 
-  const sortedJobs = useMemo(() => {
-    return [...jobs].sort((a, b) => {
-      const aTs = a.created_at ? new Date(a.created_at).getTime() : 0
-      const bTs = b.created_at ? new Date(b.created_at).getTime() : 0
-      return bTs - aTs
-    })
-  }, [jobs])
+  async function loadJobs() {
+    setLoadingJobs(true)
+    setError(null)
+    try {
+      const payload = await requestJson('/api/data-ops/rebuild-jobs?limit=80')
+      const record = payload as { jobs?: DataOpsJob[] }
+      setJobs(Array.isArray(record.jobs) ? record.jobs : [])
+    } catch (requestError) {
+      setError(requestError)
+    } finally {
+      setLoadingJobs(false)
+    }
+  }
 
-  const currentResult = (currentJob?.result ?? null) as Record<string, unknown> | null
-  const currentProgress = (currentResult?.progress ?? null) as Record<string, unknown> | null
-  const currentOutput = (currentResult?.output ?? null) as Record<string, unknown> | null
-  const currentPlan = ((currentResult?.plan ?? currentOutput?.preview ?? null) as Record<string, unknown> | null)
-  const currentHealthChecks = Array.isArray(currentProgress?.health_checks) ? (currentProgress?.health_checks as Array<Record<string, unknown>>) : []
+  async function loadJob(jobId: string) {
+    try {
+      const payload = await requestJson(`/api/data-ops/rebuild-jobs/${encodeURIComponent(jobId)}`)
+      setCurrentJob(payload as DataOpsJob)
+    } catch (requestError) {
+      setError(requestError)
+    }
+  }
+
+  async function loadHealth() {
+    setLoadingHealth(true)
+    setError(null)
+    try {
+      const query = new URLSearchParams()
+      if (healthStartDate) query.set('start_date', healthStartDate)
+      if (healthEndDate) query.set('end_date', healthEndDate)
+      if (healthTicker.trim()) query.set('ticker', healthTicker.trim().toUpperCase())
+      if (healthDomains.length > 0) query.set('domains', healthDomains.join(','))
+      const payload = await requestJson(`/api/data-ops/health?${query.toString()}`)
+      setHealth(payload as HealthResponse)
+    } catch (requestError) {
+      setError(requestError)
+    } finally {
+      setLoadingHealth(false)
+    }
+  }
+
+  async function submitRebuildJob() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const payload = await requestJson('/api/data-ops/rebuild-jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          domain,
+          mode,
+          dry_run: dryRun,
+          confirm_phrase: confirmPhrase || null,
+          requested_scope_label: `${domain} / ${scopeType}`,
+          scope: {
+            scope_type: scopeType,
+            region: scopeType === 'region' ? scopeRegion.trim().toLowerCase() : null,
+            ticker: scopeType === 'ticker' ? scopeTicker.trim().toUpperCase() : null,
+            start_date: scopeStartDate || null,
+            end_date: scopeEndDate || null,
+          },
+        }),
+      })
+      setCurrentJob(payload as DataOpsJob)
+      await loadJobs()
+    } catch (requestError) {
+      setError(requestError)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function submitMacroSeriesJob() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const payload = await requestJson('/api/data-ops/series/macro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          series_key: macroSeriesKey.trim(),
+          source_provider: macroSourceProvider,
+          source_code: macroSourceCode.trim(),
+          frequency: macroFrequency,
+          dry_run: macroDryRun,
+          backfill_start_date: macroBackfillStart || null,
+          backfill_end_date: macroBackfillEnd || null,
+        }),
+      })
+      setCurrentJob(payload as DataOpsJob)
+      await loadJobs()
+    } catch (requestError) {
+      setError(requestError)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function submitReleaseSeriesJob() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const payload = await requestJson('/api/data-ops/series/release-calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          series_key: releaseSeriesKey.trim(),
+          observation_period: releaseObservationPeriod.trim(),
+          observation_date: releaseObservationDate.trim(),
+          scheduled_release_timestamp_utc: releaseTimestampUtc.trim(),
+          dry_run: releaseDryRun,
+        }),
+      })
+      setCurrentJob(payload as DataOpsJob)
+      await loadJobs()
+    } catch (requestError) {
+      setError(requestError)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function retryJob(jobId: string) {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const payload = await requestJson(`/api/data-ops/rebuild-jobs/${encodeURIComponent(jobId)}/retry`, {
+        method: 'POST',
+      })
+      setCurrentJob(payload as DataOpsJob)
+      await loadJobs()
+    } catch (requestError) {
+      setError(requestError)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const sortedJobs = useMemo(
+    () => [...jobs].sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()),
+    [jobs]
+  )
+
+  const healthSummary = useMemo(() => summarizeHealth(health), [health])
+  const gapIssues = useMemo(() => deriveGapIssues(health), [health])
+  const failedJobs = useMemo(() => sortedJobs.filter((job) => job.status === 'failed').slice(0, 5), [sortedJobs])
+  const safeToResearch = useMemo(() => healthSummary.every((summary) => summary.missingDays === 0), [healthSummary])
 
   return (
-    <div>
+    <div className="page-stack">
       <div className="card">
-        <h2>Data Ops Console</h2>
-        <p className="small">Admin: {adminEmail}</p>
+        <div className="split-row">
+          <div>
+            <h2>Data Quality</h2>
+            <p className="small">Issue discovery comes first: coverage gaps, stale domains, and failed repair jobs. Rebuild and refill actions stay available, but only after the operator can see what is broken.</p>
+          </div>
+          <div className="small">Admin: {adminEmail}</div>
+        </div>
+      </div>
+
+      <RequestErrorCard error={error} />
+
+      <div className="metric-grid">
+        <div className="card compact-card">
+          <label>Research readiness</label>
+          <div className="metric-value">{safeToResearch ? 'Go' : 'Caution'}</div>
+          <div className="small">{safeToResearch ? 'No missing days detected in the current window.' : 'At least one domain has missing expected days.'}</div>
+        </div>
+        <div className="card compact-card">
+          <label>Open gap ranges</label>
+          <div className="metric-value">{gapIssues.length}</div>
+          <div className="small">Derived from the current health snapshot.</div>
+        </div>
+        <div className="card compact-card">
+          <label>Recent failed repair jobs</label>
+          <div className="metric-value">{failedJobs.length}</div>
+          <div className="small">Visible from the current rebuild-job history endpoint.</div>
+        </div>
       </div>
 
       <div className="card">
-        <h3>Data Health Calendar</h3>
+        <div className="split-row">
+          <div>
+            <h3>Overview</h3>
+            <p className="small">Current backend support: coverage windows and repair-job history. Duplicates, freshness, macro-release validation, and source comparison still need dedicated backend endpoints.</p>
+          </div>
+          <div style={{ minWidth: 220 }}>
+            <button className="secondary" type="button" onClick={() => void loadHealth()} disabled={loadingHealth}>
+              {loadingHealth ? 'Refreshing...' : 'Refresh overview'}
+            </button>
+          </div>
+        </div>
+
         <div className="row">
           <div>
-            <label htmlFor="healthStart">Start Date</label>
+            <label htmlFor="healthStart">Start date</label>
             <input id="healthStart" type="date" value={healthStartDate} onChange={(event) => setHealthStartDate(event.target.value)} />
           </div>
           <div>
-            <label htmlFor="healthEnd">End Date</label>
+            <label htmlFor="healthEnd">End date</label>
             <input id="healthEnd" type="date" value={healthEndDate} onChange={(event) => setHealthEndDate(event.target.value)} />
           </div>
           <div>
-            <label htmlFor="healthTicker">Ticker (optional)</label>
+            <label htmlFor="healthTicker">Ticker focus</label>
             <input id="healthTicker" value={healthTicker} onChange={(event) => setHealthTicker(event.target.value)} placeholder="AAPL" />
           </div>
           <div>
-            <label>Domains</label>
-            <select
-              value={healthDomains.join(',')}
-              onChange={(event) => setHealthDomains(event.target.value.split(',').map((item) => item.trim() as DataOpsDomain))}
-            >
+            <label htmlFor="healthDomains">Domains</label>
+            <select id="healthDomains" value={healthDomains.join(',')} onChange={(event) => setHealthDomains(event.target.value.split(',').map((item) => item.trim() as DataOpsDomain))}>
               <option value="market,macro,release-calendar">market + macro + release-calendar</option>
               <option value="market,fundamentals,earnings,macro,release-calendar">all domains</option>
               <option value="market">market</option>
@@ -355,57 +427,123 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
             </select>
           </div>
         </div>
-        <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-          <button className="secondary" type="button" onClick={() => void loadHealth()} disabled={loadingHealth}>
-            {loadingHealth ? 'Loading...' : 'Refresh Health'}
-          </button>
+
+        <div className="table-wrap" style={{ marginTop: 14 }}>
+          <table className="registry-table">
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Covered days</th>
+                <th>Missing expected days</th>
+                <th>Rows in window</th>
+              </tr>
+            </thead>
+            <tbody>
+              {healthSummary.map((summary) => (
+                <tr key={summary.domain}>
+                  <td>{summary.domain}</td>
+                  <td>{summary.coveredDays}</td>
+                  <td>{summary.missingDays}</td>
+                  <td>{summary.windowRows}</td>
+                </tr>
+              ))}
+              {!loadingHealth && healthSummary.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="small">No health snapshot loaded yet.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
-        {health ? (
-          <>
-            <div style={{ marginTop: 12, marginBottom: 10 }} className="small">
-              Window: {health.start_date} to {health.end_date}
-            </div>
-            <div className="grid-health">
-              <table className="health-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    {healthDomains.map((domainName) => (
-                      <th key={domainName}>{domainName}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {health.rows.map((row) => (
-                    <tr key={row.date}>
-                      <td>{row.date}</td>
-                      {healthDomains.map((domainName) => {
-                        const cell = row.domains[domainName] || { count: 0, status: 'n/a' }
-                        return (
-                          <td key={`${row.date}-${domainName}`} className={healthClass(cell.status)}>
-                            {cell.status} ({cell.count})
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        ) : null}
+      </div>
+
+      <div className="feature-grid">
+        <div className="card compact-card">
+          <h3>Missing data</h3>
+          {gapIssues.length === 0 ? <p className="small">No missing ranges detected in the current coverage window.</p> : null}
+          <div className="list-stack">
+            {gapIssues.slice(0, 10).map((issue) => (
+              <div className="list-row" key={`${issue.domain}-${issue.startDate}-${issue.endDate}`}>
+                <div>
+                  <strong>{issue.domain}</strong>
+                  <div className="small">{issue.startDate} → {issue.endDate}</div>
+                </div>
+                <div>
+                  <div>{issue.missingDays} missing business day(s)</div>
+                  <div className="small">Suggested action: dry-run repair for this domain/date window.</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card compact-card">
+          <h3>Duplicates</h3>
+          <p className="small">Not yet available. The current backend does not expose duplicate-row detection by table / domain / ticker / date.</p>
+        </div>
+
+        <div className="card compact-card">
+          <h3>Freshness / staleness</h3>
+          <p className="small">Not yet available. We need latest available date, latest updated timestamp, and expected latest date per domain to show freshness confidently.</p>
+        </div>
+
+        <div className="card compact-card">
+          <h3>Source comparison</h3>
+          <p className="small">Not yet available. Supabase vs backend/source/Postgres comparisons require dedicated backend diff endpoints; the backoffice should not query storage backends directly.</p>
+        </div>
       </div>
 
       <div className="card">
-        <h3>Targeted Rebuild / Refill</h3>
+        <h3>Coverage matrix</h3>
+        {health ? <p className="small">Window: {health.start_date} to {health.end_date}</p> : null}
+        <div className="grid-health">
+          <table className="health-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                {healthDomains.map((domainName) => (
+                  <th key={domainName}>{domainName}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {health?.rows.map((row) => (
+                <tr key={row.date}>
+                  <td>{row.date}</td>
+                  {healthDomains.map((domainName) => {
+                    const cell = row.domains[domainName] || { count: 0, status: 'n/a' }
+                    return (
+                      <td key={`${row.date}-${domainName}`} className={healthClass(cell.status)}>
+                        {cell.status} ({cell.count})
+                      </td>
+                    )
+                  })}
+                </tr>
+              )) ?? null}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="split-row">
+          <div>
+            <h3>Repair jobs</h3>
+            <p className="small">Use dry-run repair first. The current backend supports rebuild jobs and manual macro/release upserts, but not issue-specific preview endpoints yet.</p>
+          </div>
+          <div style={{ minWidth: 220 }}>
+            <button className="secondary" type="button" onClick={() => void loadJobs()} disabled={loadingJobs}>
+              {loadingJobs ? 'Refreshing...' : 'Refresh jobs'}
+            </button>
+          </div>
+        </div>
+
         <div className="row">
           <div>
             <label htmlFor="domain">Domain</label>
             <select id="domain" value={domain} onChange={(event) => setDomain(event.target.value as DataOpsDomain)}>
               {DOMAIN_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
+                <option key={option} value={option}>{option}</option>
               ))}
             </select>
           </div>
@@ -427,10 +565,11 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
             </select>
           </div>
           <div>
-            <label htmlFor="confirmPhrase">Confirm Phrase (wipe)</label>
+            <label htmlFor="confirmPhrase">Confirm phrase (wipe)</label>
             <input id="confirmPhrase" value={confirmPhrase} onChange={(event) => setConfirmPhrase(event.target.value)} placeholder={`WIPE ${domain}`} />
           </div>
         </div>
+
         <div className="row" style={{ marginTop: 10 }}>
           <div>
             <label htmlFor="scopeRegion">Region</label>
@@ -441,205 +580,179 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
             <input id="scopeTicker" value={scopeTicker} onChange={(event) => setScopeTicker(event.target.value)} />
           </div>
           <div>
-            <label htmlFor="scopeStart">Start Date</label>
+            <label htmlFor="scopeStart">Start date</label>
             <input id="scopeStart" type="date" value={scopeStartDate} onChange={(event) => setScopeStartDate(event.target.value)} />
           </div>
           <div>
-            <label htmlFor="scopeEnd">End Date</label>
+            <label htmlFor="scopeEnd">End date</label>
             <input id="scopeEnd" type="date" value={scopeEndDate} onChange={(event) => setScopeEndDate(event.target.value)} />
           </div>
         </div>
-        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+
+        <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <label style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <input type="checkbox" checked={dryRun} onChange={(event) => setDryRun(event.target.checked)} style={{ width: 'auto' }} />
-            dry_run
+            dry run
           </label>
           <button className="primary" type="button" onClick={() => void submitRebuildJob()} disabled={submitting}>
-            {submitting ? 'Submitting...' : 'Run Rebuild Job'}
+            {submitting ? 'Submitting...' : 'Queue repair'}
           </button>
         </div>
-      </div>
 
-      <div className="card">
-        <h3>Add Macro Series</h3>
-        <div className="row">
-          <div>
-            <label htmlFor="macroSeriesKey">Series Key</label>
-            <input id="macroSeriesKey" value={macroSeriesKey} onChange={(event) => setMacroSeriesKey(event.target.value)} placeholder="PMI_Manufacturing" />
-          </div>
-          <div>
-            <label htmlFor="macroSourceProvider">Source Provider</label>
-            <select id="macroSourceProvider" value={macroSourceProvider} onChange={(event) => setMacroSourceProvider(event.target.value as 'fred' | 'yfinance')}>
-              <option value="fred">fred</option>
-              <option value="yfinance">yfinance</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="macroSourceCode">Source Code</label>
-            <input id="macroSourceCode" value={macroSourceCode} onChange={(event) => setMacroSourceCode(event.target.value)} placeholder="DGS10" />
-          </div>
-          <div>
-            <label htmlFor="macroFrequency">Frequency</label>
-            <select id="macroFrequency" value={macroFrequency} onChange={(event) => setMacroFrequency(event.target.value as 'daily' | 'weekly' | 'monthly')}>
-              <option value="daily">daily</option>
-              <option value="weekly">weekly</option>
-              <option value="monthly">monthly</option>
-            </select>
-          </div>
-        </div>
-        <div className="row" style={{ marginTop: 10 }}>
-          <div>
-            <label htmlFor="macroBackfillStart">Backfill Start</label>
-            <input id="macroBackfillStart" type="date" value={macroBackfillStart} onChange={(event) => setMacroBackfillStart(event.target.value)} />
-          </div>
-          <div>
-            <label htmlFor="macroBackfillEnd">Backfill End</label>
-            <input id="macroBackfillEnd" type="date" value={macroBackfillEnd} onChange={(event) => setMacroBackfillEnd(event.target.value)} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'end' }}>
-            <label style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <input type="checkbox" checked={macroDryRun} onChange={(event) => setMacroDryRun(event.target.checked)} style={{ width: 'auto' }} />
-              dry_run
-            </label>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'end' }}>
-            <button className="secondary" type="button" onClick={() => void submitMacroSeriesJob()} disabled={submitting}>
-              Queue Macro Series Job
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <h3>Add Release Row</h3>
-        <div className="row">
-          <div>
-            <label htmlFor="releaseSeriesKey">Series Key</label>
-            <input id="releaseSeriesKey" value={releaseSeriesKey} onChange={(event) => setReleaseSeriesKey(event.target.value)} />
-          </div>
-          <div>
-            <label htmlFor="releaseObservationPeriod">Observation Period</label>
-            <input id="releaseObservationPeriod" value={releaseObservationPeriod} onChange={(event) => setReleaseObservationPeriod(event.target.value)} placeholder="2026-04-01" />
-          </div>
-          <div>
-            <label htmlFor="releaseObservationDate">Observation Date</label>
-            <input id="releaseObservationDate" value={releaseObservationDate} onChange={(event) => setReleaseObservationDate(event.target.value)} placeholder="2026-04-01" />
-          </div>
-          <div>
-            <label htmlFor="releaseTimestampUtc">Scheduled Release UTC</label>
-            <input id="releaseTimestampUtc" value={releaseTimestampUtc} onChange={(event) => setReleaseTimestampUtc(event.target.value)} placeholder="2026-04-15T08:30:00Z" />
-          </div>
-        </div>
-        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div className="small">
-            Scheduled release timestamps are expected release times. Actual observed availability belongs in
-            <code> observed_first_available_at_utc </code>
-            when known.
-          </div>
-        </div>
-        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={releaseDryRun} onChange={(event) => setReleaseDryRun(event.target.checked)} style={{ width: 'auto' }} />
-            dry_run
-          </label>
-          <button className="secondary" type="button" onClick={() => void submitReleaseSeriesJob()} disabled={submitting}>
-            Queue Release Upsert Job
-          </button>
-        </div>
-      </div>
-
-      {error ? <div className="error">{error}</div> : null}
-
-      <div className="card">
-        <h3>Current Data Ops Job</h3>
-        {!currentJob ? (
-          <p className="small">No job selected.</p>
-        ) : (
-          <>
-            <div className="meta">
-              <span className={statusClass(currentJob.status)}>{currentJob.status}</span>
-            </div>
-            <p>
-              <strong>{currentJob.analysis_type}</strong> · {currentJob.ticker}
-            </p>
-            <p className="small">Created: {formatDate(currentJob.created_at)}</p>
-            <p className="small">Started: {formatDate(currentJob.started_at)}</p>
-            <p className="small">Finished: {formatDate(currentJob.finished_at)}</p>
-            {currentJob.error_message ? <div className="error">{currentJob.error_message}</div> : null}
-            {currentProgress ? (
-              <>
-                <h4>Execution Progress</h4>
-                <div className="small">Step: {renderValue(currentProgress.step)}</div>
-                <div className="small">Step Status: {renderValue(currentProgress.step_status)}</div>
-                <div className="small">
-                  Batch: {renderValue(currentProgress.current_batch)} / {renderValue(currentProgress.total_batches)}
-                </div>
-                <div className="small">Rows Written: {renderValue(currentProgress.rows_written_total)}</div>
-                <div className="small">Rows Deleted: {renderValue(currentProgress.rows_deleted_total)}</div>
-                <div className="small">Finalization: {renderValue(currentProgress.finalization_status)}</div>
-                {currentProgress.current_window ? (
-                  <div className="small">Current Window: {renderValue(currentProgress.current_window)}</div>
-                ) : null}
-                {currentProgress.abort_reason ? <div className="error">Abort Reason: {renderValue(currentProgress.abort_reason)}</div> : null}
-              </>
-            ) : null}
-            {currentPlan ? (
-              <>
-                <h4>Plan / Dry Run Preview</h4>
-                <div className="small">Execution Mode: {renderValue(currentPlan.execution_mode)}</div>
-                <div className="small">Window: {renderValue(currentPlan.start_date)} → {renderValue(currentPlan.end_date)}</div>
-                <div className="small">Chunk Count: {renderValue(currentPlan.chunk_count)}</div>
-                <div className="small">Upsert Batch Size: {renderValue(readPlanBatchSize(currentPlan))}</div>
-                <div className="small">Sleep Seconds: {renderValue(currentPlan.sleep_seconds)}</div>
-                <div className="small">Resolved Symbols: {renderValue(currentPlan.resolved_symbols)}</div>
-                <div className="small">Series Start Dates: {renderValue(currentPlan.series_start_dates)}</div>
-                <div className="small">Refresh MVs: {renderValue(currentPlan.refresh_materialized_views)}</div>
-                <div className="small">Wipe Tables: {renderValue(currentPlan.wipe_tables)}</div>
-              </>
-            ) : null}
-            {currentHealthChecks.length > 0 ? (
-              <>
-                <h4>Health Checks</h4>
-                <pre>{JSON.stringify(currentHealthChecks, null, 2)}</pre>
-              </>
-            ) : null}
-            <h4>Params</h4>
-            <pre>{JSON.stringify(currentJob.params ?? {}, null, 2)}</pre>
-            <h4>Result</h4>
-            <pre>{JSON.stringify(currentJob.result ?? {}, null, 2)}</pre>
-          </>
-        )}
-      </div>
-
-      <div className="card">
-        <h3>Data Ops Job History</h3>
-        {loadingJobs ? <p className="small">Loading jobs...</p> : null}
-        {!loadingJobs && sortedJobs.length === 0 ? <p className="small">No jobs found.</p> : null}
-        {sortedJobs.map((job) => (
-          <div className="job-row" key={job.job_id}>
-            <div>
+        <details style={{ marginTop: 14 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Advanced repair inputs</summary>
+          <div className="advanced-panel">
+            <div className="row">
               <div>
-                <strong>{job.analysis_type}</strong> · {job.ticker}
+                <label htmlFor="macroSeriesKey">Macro series key</label>
+                <input id="macroSeriesKey" value={macroSeriesKey} onChange={(event) => setMacroSeriesKey(event.target.value)} />
               </div>
-              <div className="small">{job.job_id}</div>
-              <div className="small">Created: {formatDate(job.created_at)}</div>
+              <div>
+                <label htmlFor="macroSourceProvider">Source provider</label>
+                <select id="macroSourceProvider" value={macroSourceProvider} onChange={(event) => setMacroSourceProvider(event.target.value as 'fred' | 'yfinance')}>
+                  <option value="fred">fred</option>
+                  <option value="yfinance">yfinance</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="macroSourceCode">Source code</label>
+                <input id="macroSourceCode" value={macroSourceCode} onChange={(event) => setMacroSourceCode(event.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="macroFrequency">Frequency</label>
+                <select id="macroFrequency" value={macroFrequency} onChange={(event) => setMacroFrequency(event.target.value as 'daily' | 'weekly' | 'monthly')}>
+                  <option value="daily">daily</option>
+                  <option value="weekly">weekly</option>
+                  <option value="monthly">monthly</option>
+                </select>
+              </div>
             </div>
-            <div>
-              <span className={statusClass(job.status)}>{job.status}</span>
+            <div className="row" style={{ marginTop: 10 }}>
+              <div>
+                <label htmlFor="macroBackfillStart">Macro backfill start</label>
+                <input id="macroBackfillStart" type="date" value={macroBackfillStart} onChange={(event) => setMacroBackfillStart(event.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="macroBackfillEnd">Macro backfill end</label>
+                <input id="macroBackfillEnd" type="date" value={macroBackfillEnd} onChange={(event) => setMacroBackfillEnd(event.target.value)} />
+              </div>
+              <div className="checkbox-row">
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" checked={macroDryRun} onChange={(event) => setMacroDryRun(event.target.checked)} style={{ width: 'auto' }} />
+                  dry run
+                </label>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'end' }}>
+                <button className="secondary" type="button" onClick={() => void submitMacroSeriesJob()} disabled={submitting}>Queue macro upsert</button>
+              </div>
             </div>
-            <div>
-              <button className="secondary" type="button" onClick={() => void loadJob(job.job_id)}>
-                Open
-              </button>
+
+            <div className="row" style={{ marginTop: 14 }}>
+              <div>
+                <label htmlFor="releaseSeriesKey">Release series key</label>
+                <input id="releaseSeriesKey" value={releaseSeriesKey} onChange={(event) => setReleaseSeriesKey(event.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="releaseObservationPeriod">Observation period</label>
+                <input id="releaseObservationPeriod" value={releaseObservationPeriod} onChange={(event) => setReleaseObservationPeriod(event.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="releaseObservationDate">Observation date</label>
+                <input id="releaseObservationDate" value={releaseObservationDate} onChange={(event) => setReleaseObservationDate(event.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="releaseTimestampUtc">Scheduled release timestamp UTC</label>
+                <input id="releaseTimestampUtc" value={releaseTimestampUtc} onChange={(event) => setReleaseTimestampUtc(event.target.value)} />
+              </div>
             </div>
-            <div>
-              <button className="secondary" type="button" onClick={() => void retryJob(job.job_id)} disabled={submitting}>
-                Retry
-              </button>
+            <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
+              <label style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={releaseDryRun} onChange={(event) => setReleaseDryRun(event.target.checked)} style={{ width: 'auto' }} />
+                dry run
+              </label>
+              <button className="secondary" type="button" onClick={() => void submitReleaseSeriesJob()} disabled={submitting}>Queue release upsert</button>
             </div>
           </div>
-        ))}
+        </details>
+
+        <div className="table-wrap" style={{ marginTop: 14 }}>
+          <table className="registry-table">
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Status</th>
+                <th>Domain</th>
+                <th>Created</th>
+                <th>Finished</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedJobs.map((job) => (
+                <tr key={job.job_id}>
+                  <td>
+                    <strong>{job.job_id}</strong>
+                    <div className="small">{job.analysis_type}</div>
+                  </td>
+                  <td><span className={statusClass(job.status)}>{job.status}</span></td>
+                  <td>{job.ticker}</td>
+                  <td>{formatDate(job.created_at)}</td>
+                  <td>{formatDate(job.finished_at)}</td>
+                  <td>
+                    <div className="table-actions">
+                      <button className="secondary" type="button" onClick={() => void loadJob(job.job_id)}>Open</button>
+                      {job.status === 'failed' ? (
+                        <button className="secondary" type="button" onClick={() => void retryJob(job.job_id)} disabled={submitting}>Retry</button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!loadingJobs && sortedJobs.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="small">No repair jobs found.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {currentJob ? (
+        <div className="card">
+          <h3>Repair job detail</h3>
+          <div className="field-grid">
+            <Field label="job_id" value={currentJob.job_id} />
+            <Field label="status" value={<span className={statusClass(currentJob.status)}>{currentJob.status}</span>} />
+            <Field label="analysis_type" value={currentJob.analysis_type} />
+            <Field label="worker_job_id" value={currentJob.worker_job_id} />
+            <Field label="created_at" value={formatDate(currentJob.created_at)} />
+            <Field label="finished_at" value={formatDate(currentJob.finished_at)} />
+          </div>
+          {currentJob.error_message ? <div className="error">{currentJob.error_message}</div> : null}
+          <pre>{JSON.stringify(currentJob.result ?? currentJob.params ?? {}, null, 2)}</pre>
+        </div>
+      ) : null}
+
+      <div className="card">
+        <h3>Missing backend contracts</h3>
+        <ul className="plain-list">
+          <li>`GET /analyst/data-ops/duplicates`: duplicate-row counts by table / domain / ticker / date range.</li>
+          <li>`GET /analyst/data-ops/freshness`: latest available date, latest updated_at, expected latest date, and staleness severity per domain / ticker.</li>
+          <li>`GET /analyst/data-ops/source-comparison`: Supabase vs backend/source/Postgres count mismatches and latest-timestamp mismatches.</li>
+          <li>`GET /analyst/data-ops/macro-release-gaps`: missing expected macro releases by series and observation period.</li>
+          <li>`GET /analyst/data-ops/issues/{domain}`: issue-specific detail endpoint so repair actions can open directly from a detected problem.</li>
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div>
+      <label>{label}</label>
+      <div className="field-value">{value}</div>
     </div>
   )
 }
