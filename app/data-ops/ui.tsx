@@ -50,24 +50,31 @@ type GapIssue = {
 type BaseCheck = {
   status: 'ok' | 'partial' | 'unsupported' | 'warning' | 'unavailable' | 'stale' | 'missing' | string
   severity?: string
+  unsupported?: string[]
+  message?: string
 }
 
 type DuplicatesResponse = BaseCheck & {
-  duplicate_group_count?: number
-  duplicate_row_count?: number
-  items?: Array<{
+  summary?: {
+    duplicate_groups?: number
+    duplicate_rows?: number
+    severity?: string
+  }
+  groups?: Array<{
+    domain?: string
     table?: string
-    key_fields?: string[]
+    key?: string[]
     duplicate_count?: number
     sample_rows?: unknown[]
   }>
 }
 
 type FreshnessResponse = BaseCheck & {
-  summary_counts?: { ok?: number; warning?: number; stale?: number; unavailable?: number }
+  summary?: { ok?: number; warning?: number; stale?: number; unavailable?: number }
   items?: Array<{
     domain?: string
     identifier?: string
+    identifier_type?: string
     latest_available_date?: string
     latest_updated_at?: string
     expected_latest_date?: string
@@ -78,25 +85,30 @@ type FreshnessResponse = BaseCheck & {
 }
 
 type SourceComparisonResponse = BaseCheck & {
-  comparison_summary?: string
-  unsupported_reason?: string
-  items?: Array<{
-    left_source?: string
-    right_source?: string
+  summary?: { match?: number; mismatch?: number; unavailable?: number }
+  comparisons?: Array<{
+    domain?: string
+    identifier?: string
+    left?: string
+    right?: string
+    status?: string
     differences?: Record<string, unknown>
-    unsupported_reason?: string
+    reason?: string
   }>
 }
 
 type MacroReleaseGapsResponse = BaseCheck & {
-  series_checked?: number
-  missing_releases?: number
+  summary?: {
+    series_checked?: number
+    missing_releases?: number
+    severity?: string
+  }
   items?: Array<{
     series_key?: string
     observation_period?: string
-    expected_release_timestamp?: string
+    expected_release_timestamp_utc?: string
     present?: boolean
-    observed_first_available_at?: string
+    observed_first_available_at_utc?: string
     severity?: string
     reason?: string
   }>
@@ -473,7 +485,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
         <div className="split-row">
           <div>
             <h3>Overview</h3>
-            <p className="small">Current backend support: coverage windows and repair-job history. Duplicates, freshness, macro-release validation, and source comparison still need dedicated backend endpoints.</p>
+            <p className="small">Current backend support: coverage windows, repair-job history, duplicates, freshness, macro-release validation, and source comparison.</p>
           </div>
           <div style={{ minWidth: 220 }}>
             <button className="secondary" type="button" onClick={() => void loadHealth()} disabled={loadingHealth}>
@@ -562,22 +574,23 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
             <div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                 <span className={statusColorClass(duplicates.status)}>{duplicates.status}</span>
-                {duplicates.duplicate_group_count !== undefined && <span className="small">{duplicates.duplicate_group_count} groups</span>}
-                {duplicates.duplicate_row_count !== undefined && <span className="small">{duplicates.duplicate_row_count} rows</span>}
+                {duplicates.summary?.duplicate_groups !== undefined && <span className="small">{duplicates.summary.duplicate_groups} groups</span>}
+                {duplicates.summary?.duplicate_rows !== undefined && <span className="small">{duplicates.summary.duplicate_rows} rows</span>}
               </div>
-              {duplicates.status === 'unsupported' ? (
-                <p className="small">Duplicates check is not available for this domain. The backend has no duplicate key contract defined yet.</p>
-              ) : null}
-              {duplicates.items && duplicates.items.length > 0 ? (
+              {duplicates.message && <p className="small">{duplicates.message}</p>}
+              {duplicates.unsupported && duplicates.unsupported.length > 0 && (
+                <p className="small">Unsupported: {duplicates.unsupported.join(', ')}</p>
+              )}
+              {duplicates.groups && duplicates.groups.length > 0 ? (
                 <div className="list-stack">
-                  {duplicates.items.slice(0, 5).map((item, idx) => (
+                  {duplicates.groups.slice(0, 5).map((group, idx) => (
                     <div className="list-row" key={idx}>
                       <div>
-                        <strong>{item.table}</strong>
-                        <div className="small">Keys: {(item.key_fields || []).join(', ')}</div>
+                        <strong>{group.table || group.domain}</strong>
+                        <div className="small">Keys: {(group.key || []).join(', ')}</div>
                       </div>
                       <div>
-                        <div>{item.duplicate_count} duplicates</div>
+                        <div>{group.duplicate_count} duplicates</div>
                       </div>
                     </div>
                   ))}
@@ -595,15 +608,16 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
             <div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                 <span className={statusColorClass(freshness.status)}>{freshness.status}</span>
-                {freshness.summary_counts && (
+                {freshness.summary && (
                   <span className="small">
-                    {freshness.summary_counts.stale || 0} stale, {freshness.summary_counts.unavailable || 0} unavailable
+                    {freshness.summary.stale || 0} stale, {freshness.summary.unavailable || 0} unavailable
                   </span>
                 )}
               </div>
-              {freshness.status === 'unavailable' ? (
-                <p className="small">Latest data can be inspected, but expected-latest verdict is unavailable until calendar/cadence contracts exist.</p>
-              ) : null}
+              {freshness.message && <p className="small">{freshness.message}</p>}
+              {freshness.unsupported && freshness.unsupported.length > 0 && (
+                <p className="small">Unsupported: {freshness.unsupported.join(', ')}</p>
+              )}
               {freshness.items && freshness.items.length > 0 ? (
                 <div className="list-stack">
                   {freshness.items.slice(0, 5).map((item, idx) => (
@@ -632,21 +646,26 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
             <div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                 <span className={statusColorClass(sourceComparison.status)}>{sourceComparison.status}</span>
+                {sourceComparison.summary && (
+                  <span className="small">
+                    {sourceComparison.summary.match || 0} match, {sourceComparison.summary.mismatch || 0} mismatch
+                  </span>
+                )}
               </div>
-              {sourceComparison.comparison_summary && <p className="small">{sourceComparison.comparison_summary}</p>}
-              {sourceComparison.status === 'unsupported' ? (
-                <p className="small">{sourceComparison.unsupported_reason || 'Source comparison is not available yet because backend has no second source/mirror contract.'}</p>
-              ) : null}
-              {sourceComparison.items && sourceComparison.items.length > 0 ? (
+              {sourceComparison.message && <p className="small">{sourceComparison.message}</p>}
+              {sourceComparison.unsupported && sourceComparison.unsupported.length > 0 && (
+                <p className="small">Unsupported: {sourceComparison.unsupported.join(', ')}</p>
+              )}
+              {sourceComparison.comparisons && sourceComparison.comparisons.length > 0 ? (
                 <div className="list-stack">
-                  {sourceComparison.items.slice(0, 5).map((item, idx) => (
+                  {sourceComparison.comparisons.slice(0, 5).map((item, idx) => (
                     <div className="list-row" key={idx}>
                       <div>
-                        <strong>Left: {item.left_source}</strong>
-                        <div className="small">Right: {item.right_source}</div>
+                        <strong>Left: {item.left}</strong>
+                        <div className="small">Right: {item.right}</div>
                       </div>
                       <div>
-                        {item.unsupported_reason ? <div className="small">{item.unsupported_reason}</div> : null}
+                        {item.reason ? <div className="small">{item.reason}</div> : null}
                       </div>
                     </div>
                   ))}
@@ -664,11 +683,12 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
             <div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                 <span className={statusColorClass(macroGaps.status)}>{macroGaps.status}</span>
-                {macroGaps.missing_releases !== undefined && <span className="small">{macroGaps.missing_releases} missing</span>}
+                {macroGaps.summary?.missing_releases !== undefined && <span className="small">{macroGaps.summary.missing_releases} missing</span>}
               </div>
-              {macroGaps.status === 'partial' ? (
-                <p className="small">Macro release checks are partial because backend had to infer from release-calendar metadata or could not inspect the observed macro table.</p>
-              ) : null}
+              {macroGaps.message && <p className="small">{macroGaps.message}</p>}
+              {macroGaps.unsupported && macroGaps.unsupported.length > 0 && (
+                <p className="small">Unsupported: {macroGaps.unsupported.join(', ')}</p>
+              )}
               {macroGaps.items && macroGaps.items.length > 0 ? (
                 <div className="list-stack">
                   {macroGaps.items.slice(0, 5).map((item, idx) => (
@@ -936,11 +956,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
       <div className="card">
         <h3>Missing backend contracts</h3>
         <ul className="plain-list">
-          <li>`GET /analyst/data-ops/duplicates`: duplicate-row counts by table / domain / ticker / date range.</li>
-          <li>`GET /analyst/data-ops/freshness`: latest available date, latest updated_at, expected latest date, and staleness severity per domain / ticker.</li>
-          <li>`GET /analyst/data-ops/source-comparison`: Supabase vs backend/source/Postgres count mismatches and latest-timestamp mismatches.</li>
-          <li>`GET /analyst/data-ops/macro-release-gaps`: missing expected macro releases by series and observation period.</li>
-          <li>`GET /analyst/data-ops/issues/{domain}`: issue-specific detail endpoint so repair actions can open directly from a detected problem.</li>
+          <li>`GET /analyst/data-ops/issues/{'{domain}'}`: issue-specific detail endpoint so repair actions can open directly from a detected problem.</li>
         </ul>
       </div>
     </div>
