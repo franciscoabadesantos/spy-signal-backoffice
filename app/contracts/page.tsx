@@ -47,6 +47,9 @@ const AVAILABLE_CONTRACTS = [
   {
     group: 'Signals',
     rows: [
+      ['/analyst/signal-evaluation/candidates', '/signals', 'available / proxied', 'Signal Evaluation V1 candidate comparison list. Normalizes summaries, sources metadata, and gaps.'],
+      ['/analyst/signal-evaluation/candidates/{candidate_id}', '/signals', 'available / proxied', 'Signal Evaluation V1 selected candidate detail.'],
+      ['/analyst/signal-evaluation/candidates/{candidate_id}/report', '/signals', 'available / proxied', 'Signal Evaluation V1 selected report with metrics, lineage, artifacts, series containers, and structured gaps.'],
       ['/screener/signals', '/signals', 'available / proxied', 'Latest signal rows.'],
       ['/signals/history/{ticker}', '/signals', 'available / proxied', 'Ticker signal history.'],
       ['/signals/last-flips', '/signals', 'available / proxied', 'Last flip date by ticker.'],
@@ -94,20 +97,21 @@ const MISSING_CONTRACTS = [
 ]
 
 const SIGNAL_EVALUATION_REQUIRED_CONTRACTS = [
-  ['candidate/model universe list', 'partial', 'backend / registry', '/signals', 'Registry candidates and research experiments exist, but there is no normalized universe endpoint for all comparable models/signals.'],
-  ['normalized comparison summary', 'partial', 'backend', '/signals', 'Backoffice derives rows from current signal, research, and registry payloads; no normalized comparison contract exists.'],
-  ['IC series', 'missing', 'backend / research orchestrator', '/signals', 'No standard ic_series field is exposed for selected model/candidate charts.'],
-  ['rolling IC series', 'missing', 'backend / research orchestrator', '/signals', 'No rolling_ic_series contract is exposed.'],
-  ['forward returns by signal date/horizon', 'partial', 'backend', '/signals', 'Signal history has realized_return for official ticker history, but no candidate/model forward-return series contract exists.'],
-  ['cumulative return/equity curve', 'artifact-only', 'research orchestrator / backend', '/signals', 'Backtest artifacts may contain references, but Backoffice has no artifact-to-chart extraction contract.'],
-  ['drawdown series', 'artifact-only', 'research orchestrator / backend', '/signals', 'Backtest artifacts may contain references, but no normalized drawdown series is exposed.'],
-  ['turnover series', 'missing', 'backend / strategy lab', '/signals', 'No turnover time-series contract is exposed.'],
-  ['confidence calibration', 'missing', 'backend / ML lab', '/signals', 'No calibration bins or confidence-quality contract is exposed.'],
-  ['regime breakdown', 'missing', 'backend / research orchestrator', '/signals', 'No regime breakdown contract is exposed.'],
-  ['decay/live-vs-backtest divergence', 'missing', 'backend / future', '/signals', 'No production-vs-backtest divergence contract exists.'],
-  ['official active model/candidate lineage', 'partial', 'registry / backend', '/signals', 'Registry active pointers exist, but there is no official signal lineage endpoint tied to live signal history.'],
+  ['candidate/model universe list', 'available', 'backend', '/signals', 'Signal Evaluation V1 exposes /analyst/signal-evaluation/candidates with source, ticker, strategy, universe, status, limit, offset, and include_official filters.'],
+  ['normalized comparison summary', 'available', 'backend', '/signals', 'Signal Evaluation V1 normalizes candidate summaries, metrics, sources metadata, links, and structured gaps.'],
+  ['selected candidate report', 'available', 'backend', '/signals', 'Signal Evaluation V1 report endpoint returns metrics, robustness, lineage, readiness, artifacts, raw evidence, series containers, and gaps.'],
+  ['IC series', 'V1 gap-backed', 'backend / research orchestrator', '/signals', 'V1 returns series containers and backend gaps; it does not compute/populate IC points.'],
+  ['rolling IC series', 'V1 gap-backed', 'backend / research orchestrator', '/signals', 'V1 returns structured gaps for rolling IC series.'],
+  ['forward returns by signal date/horizon', 'V1 gap-backed', 'backend', '/signals', 'V1 does not compute candidate/model forward-return time series.'],
+  ['cumulative return/equity curve', 'V1 gap-backed', 'research orchestrator / backend', '/signals', 'V1 can expose artifact refs and gaps, but does not dereference artifacts into equity curve points.'],
+  ['drawdown series', 'V1 gap-backed', 'research orchestrator / backend', '/signals', 'V1 can expose artifact refs and gaps, but does not normalize drawdown points.'],
+  ['turnover series', 'V1 gap-backed', 'backend / strategy lab', '/signals', 'V1 returns structured gaps for turnover series.'],
+  ['confidence calibration', 'V1 gap-backed', 'backend / ML lab', '/signals', 'V1 returns structured gaps for confidence calibration.'],
+  ['regime breakdown', 'V1 gap-backed', 'backend / research orchestrator', '/signals', 'V1 returns structured gaps for regime breakdown.'],
+  ['decay/live-vs-backtest divergence', 'V1 gap-backed', 'backend / future', '/signals', 'V1 returns structured gaps for decay/live-vs-backtest divergence.'],
+  ['official active model/candidate lineage', 'partial', 'registry / backend', '/signals', 'V1 can include active-pointer evidence when available, but live signal history is not fully linked to official lineage.'],
   ['paper/shadow candidate signal stream', 'missing', 'backend / future', '/signals', 'No paper/shadow signal stream exists.'],
-  ['candidate-vs-official disagreement performance', 'missing', 'backend / future', '/signals', 'No disagreement-performance contract exists.'],
+  ['candidate-vs-official disagreement performance', 'V1 gap-backed', 'backend / future', '/signals', 'V1 returns structured gaps; no disagreement-performance series is computed.'],
   ['launch signal test/model experiment', 'partial', 'backend / research orchestrator', '/signals, /research', 'Single research experiment creation exists; dynamic signal-test launch is not standardized.'],
   ['campaign/model-template catalog', 'missing', 'backend / future', '/signals, /research', 'No template catalog or campaign expansion contract exists.'],
 ]
@@ -210,6 +214,6 @@ export default async function ContractsPage() {
 
 function contractStatusClass(status: string): string {
   if (status === 'available') return 'badge completed'
-  if (status === 'partial' || status === 'artifact-only') return 'badge running'
+  if (status === 'partial' || status === 'artifact-only' || status === 'V1 gap-backed') return 'badge running'
   return 'badge backend-gap'
 }
