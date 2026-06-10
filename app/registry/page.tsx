@@ -1,8 +1,9 @@
 import Link from 'next/link'
 import { requireAdminUser } from '@/lib/admin-auth'
-import { createModelRegistryClient } from '@/lib/model-registry-client'
+import { loadRegistryDashboard } from '@/lib/registry-backend'
 import {
   ActivePointerTable,
+  BundleList,
   CandidateFilters,
   CandidateTable,
   PromotionEventList,
@@ -25,7 +26,6 @@ type RegistryPageProps = {
 export default async function RegistryPage({ searchParams }: RegistryPageProps) {
   const admin = await requireAdminUser()
   const params = await searchParams
-  const client = createModelRegistryClient()
   const status = trimParam(params.status)
   const strategyFamily = trimParam(params.strategy_family)
   const universe = trimParam(params.universe)
@@ -37,7 +37,7 @@ export default async function RegistryPage({ searchParams }: RegistryPageProps) 
   let error: unknown = null
 
   try {
-    payload = await loadRegistryDashboard(client, { status, strategyFamily, universe, environment })
+    payload = await loadRegistryDashboard({ status, strategyFamily, universe, environment })
   } catch (requestError) {
     error = requestError
   }
@@ -70,6 +70,11 @@ export default async function RegistryPage({ searchParams }: RegistryPageProps) 
           </div>
 
           <div className="card">
+            <h3>Bundle List</h3>
+            <BundleList bundles={payload.bundles} />
+          </div>
+
+          <div className="card">
             <h3>Active Pointer Dashboard</h3>
             <form action="/registry" className="inline-filter">
               <input type="hidden" name="status" value={status ?? ''} />
@@ -95,36 +100,6 @@ export default async function RegistryPage({ searchParams }: RegistryPageProps) 
       ) : null}
     </div>
   )
-}
-
-async function loadRegistryDashboard(
-  client: ReturnType<typeof createModelRegistryClient>,
-  filters: {
-    status?: string
-    strategyFamily?: string
-    universe?: string
-    environment?: string
-  }
-) {
-  const [summary, candidates, activePointers, promotionEvents, readinessReports] = await Promise.all([
-    client.getRegistrySummary(),
-    client.listCandidates({
-      status: filters.status,
-      strategyFamily: filters.strategyFamily,
-      universe: filters.universe,
-    }),
-    client.listActivePointers(filters.environment),
-    client.listPromotionEvents(null, 25),
-    client.listReadinessReports(null, 25),
-  ])
-
-  return {
-    summary,
-    candidates,
-    activePointers,
-    promotionEvents,
-    readinessReports,
-  }
 }
 
 function trimParam(value?: string): string | undefined {

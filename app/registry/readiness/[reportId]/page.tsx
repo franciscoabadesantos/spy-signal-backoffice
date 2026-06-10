@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { requireAdminUser } from '@/lib/admin-auth'
-import { createModelRegistryClient } from '@/lib/model-registry-client'
-import { ReadinessReportDetail, RegistryErrorState, RegistryHeader } from '../../components'
+import { getReadinessReport } from '@/lib/registry-backend'
+import { JsonSection, ReadinessReportDetail, RegistryErrorState, RegistryHeader } from '../../components'
 
 type ReadinessDetailPageProps = {
   params: Promise<{ reportId: string }>
@@ -10,12 +10,11 @@ type ReadinessDetailPageProps = {
 export default async function ReadinessDetailPage({ params }: ReadinessDetailPageProps) {
   const admin = await requireAdminUser()
   const { reportId } = await params
-  const client = createModelRegistryClient()
-  let report: Awaited<ReturnType<typeof client.getReadinessReport>> | null = null
+  let report: Awaited<ReturnType<typeof getReadinessReport>> | null = null
   let error: unknown = null
 
   try {
-    report = await client.getReadinessReport(reportId)
+    report = await getReadinessReport(reportId)
   } catch (requestError) {
     error = requestError
   }
@@ -27,7 +26,12 @@ export default async function ReadinessDetailPage({ params }: ReadinessDetailPag
         <Link href="/registry" className="text-link">Back to registry</Link>
       </div>
       {error ? <RegistryErrorState error={error} /> : null}
-      {!error && report ? <ReadinessReportDetail report={report} /> : null}
+      {!error && report ? (
+        <>
+          <ReadinessReportDetail report={report.readiness_report} />
+          <JsonSection title="Current Contract Evidence" value={report.current_contract_evidence} />
+        </>
+      ) : null}
     </div>
   )
 }

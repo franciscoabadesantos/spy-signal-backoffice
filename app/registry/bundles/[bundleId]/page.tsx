@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireAdminUser } from '@/lib/admin-auth'
-import { createModelRegistryClient } from '@/lib/model-registry-client'
+import { getBundle } from '@/lib/registry-backend'
 import { BundleOverview, RegistryErrorState, RegistryHeader } from '../../components'
 
 type BundleDetailPageProps = {
@@ -10,12 +10,11 @@ type BundleDetailPageProps = {
 export default async function BundleDetailPage({ params }: BundleDetailPageProps) {
   const admin = await requireAdminUser()
   const { bundleId } = await params
-  const client = createModelRegistryClient()
-  let bundle: Awaited<ReturnType<typeof client.getBundle>> | null = null
+  let bundle: Awaited<ReturnType<typeof getBundle>> | null = null
   let error: unknown = null
 
   try {
-    bundle = await client.getBundle(bundleId)
+    bundle = await getBundle(bundleId)
   } catch (requestError) {
     error = requestError
   }
@@ -27,7 +26,7 @@ export default async function BundleDetailPage({ params }: BundleDetailPageProps
         <Link href="/registry" className="text-link">Back to registry</Link>
       </div>
       {error ? <RegistryErrorState error={error} /> : null}
-      {!error && bundle ? <BundleOverview bundle={bundle} /> : null}
+      {!error && bundle ? <BundleOverview bundle={bundle.bundle} /> : null}
     </div>
   )
 }

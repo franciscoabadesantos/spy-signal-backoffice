@@ -5,30 +5,32 @@ import {
   CandidateLineage,
   CandidateRecord,
   DashboardSummary,
-  ModelRegistryClientError,
   PromotionEvent,
   ReadinessReport,
-} from '@/lib/model-registry-client'
+  RegistryBackendError,
+  buildCandidateEvidenceId,
+  buildReadinessEvidenceId,
+  isRegistryUnavailableError,
+} from '@/lib/registry-backend'
 
 export function RegistryErrorState({ error }: { error: unknown }) {
-  const title = error instanceof ModelRegistryClientError ? error.errorCode : 'registry_error'
+  const registryError = error instanceof RegistryBackendError ? error : null
+  const title = registryError ? registryError.errorCode : 'registry_error'
   const message = error instanceof Error ? error.message : 'Unable to load registry data.'
-  const status = error instanceof ModelRegistryClientError ? error.status : null
-  const isMissingConfig = error instanceof ModelRegistryClientError && error.errorCode === 'registry_api_not_configured'
+  const status = registryError ? registryError.status : null
+  const isUnavailable = isRegistryUnavailableError(error)
   return (
     <div className="error">
       <strong>{title}</strong>
       <div>{message}</div>
-      {isMissingConfig ? (
+      {isUnavailable ? (
         <div className="small" style={{ marginTop: 8 }}>
           Registry evidence is not available through finance-backend yet.
-          The backoffice expects registry reads to come through backend registry façade routes.
-          Until those backend routes exist, candidate/bundle/readiness/promotion views remain unavailable.
         </div>
       ) : null}
       {status ? <div className="small">HTTP status: {status}</div> : null}
-      {error instanceof ModelRegistryClientError && Object.keys(error.details).length > 0 ? (
-        <pre>{JSON.stringify(error.details, null, 2)}</pre>
+      {registryError && !isUnavailable && Object.keys(registryError.details).length > 0 ? (
+        <pre>{JSON.stringify(registryError.details, null, 2)}</pre>
       ) : null}
     </div>
   )
@@ -44,7 +46,7 @@ export function RegistryHeader({ adminEmail }: { adminEmail: string }) {
       <div className="split-row">
         <div>
           <h2>Registry / Evidence</h2>
-          <p className="small">Read-only inspection over the finance-model-registry API. This is the candidate, bundle, readiness, promotion, and active-pointer ledger for research outputs.</p>
+          <p className="small">Read-only inspection through finance-backend registry proxy routes. This is the candidate, bundle, readiness, promotion, and active-pointer ledger for research outputs.</p>
         </div>
         <div className="small">Admin: {adminEmail}</div>
       </div>
@@ -178,6 +180,7 @@ export function CandidateTable({ candidates }: { candidates: CandidateRecord[] }
 }
 
 export function CandidateOverview({ candidate }: { candidate: CandidateRecord }) {
+  const evidenceId = buildCandidateEvidenceId(candidate.candidate_id)
   return (
     <div className="card">
       <h3>Candidate Detail</h3>
@@ -206,6 +209,11 @@ export function CandidateOverview({ candidate }: { candidate: CandidateRecord })
       <JsonSection title="Metrics Summary" value={candidate.metrics_summary_json} />
       <JsonSection title="Robustness Summary" value={candidate.robustness_summary_json} />
       <JsonSection title="Approval Summary" value={candidate.approval_summary_json} />
+      <p className="small" style={{ marginTop: 16 }}>
+        <Link href={`/registry/evidence/${encodeURIComponent(evidenceId)}`} className="text-link">
+          Open research artifact evidence
+        </Link>
+      </p>
     </div>
   )
 }
@@ -335,6 +343,7 @@ export function ReadinessReportList({ reports }: { reports: ReadinessReport[] })
 }
 
 export function ReadinessReportDetail({ report }: { report: ReadinessReport }) {
+  const evidenceId = buildReadinessEvidenceId(report.report_id)
   return (
     <div className="card">
       <h3>Readiness Report</h3>
@@ -355,6 +364,11 @@ export function ReadinessReportDetail({ report }: { report: ReadinessReport }) {
       <JsonSection title="Missing Evidence" value={report.missing_evidence} />
       <JsonSection title="Metric Evidence" value={report.metric_evidence} />
       <JsonSection title="Artifact Evidence" value={report.artifact_evidence} />
+      <p className="small" style={{ marginTop: 16 }}>
+        <Link href={`/registry/evidence/${encodeURIComponent(evidenceId)}`} className="text-link">
+          Open current contract evidence
+        </Link>
+      </p>
     </div>
   )
 }

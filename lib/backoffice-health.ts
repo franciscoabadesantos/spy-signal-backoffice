@@ -3,7 +3,7 @@ import {
   backendServiceTokenConfigured,
   requestBackendJson,
 } from '@/lib/backend-client'
-import { createModelRegistryClient, loadModelRegistryConfig, ModelRegistryClientError } from '@/lib/model-registry-client'
+import { isRegistryUnavailablePayload } from '@/lib/registry-backend'
 
 export type HealthState = 'reachable' | 'unreachable' | 'missing' | 'configured'
 
@@ -38,8 +38,6 @@ export async function loadBackofficeHealth(adminEmail: string): Promise<Backoffi
   const checkedAt = new Date().toISOString()
   const backendConfigured = backendBaseUrlConfigured()
   const serviceTokenConfigured = backendServiceTokenConfigured()
-  const registryConfig = loadModelRegistryConfig()
-  const registryConfigured = Boolean(registryConfig.baseUrl)
 
   const routeChecks = await Promise.all([
     probeBackendRoute({
@@ -81,9 +79,9 @@ export async function loadBackofficeHealth(adminEmail: string): Promise<Backoffi
         : 'BACKEND_BASE_URL or FINANCE_BACKEND_URL is not configured.',
     },
     registryApi: {
-      status: registryConfigured ? registryProbe.status : 'missing',
-      configured: registryConfigured,
-      message: registryConfigured ? registryProbe.message : 'Backend registry façade is pending.',
+      status: registryProbe.status,
+      configured: registryProbe.status === 'reachable',
+      message: registryProbe.message,
     },
     routeChecks,
   }
@@ -135,35 +133,43 @@ async function probeBackendRoute({
 }
 
 async function probeRegistryRoute(): Promise<RouteProbe> {
-  const config = loadModelRegistryConfig()
-  if (!config.baseUrl) {
-    return {
-      label: 'Registry summary',
-      method: 'GET',
-      path: '/dashboard/summary',
-      status: 'missing',
-      message: 'Backend registry façade is pending.',
-    }
+  if (!backendBaseUrlConfigured()) {
+    return missingProbe('Registry proxy', '/analyst/registry/promotion-events', 'Backend base URL is missing.')
   }
 
   try {
-    const client = createModelRegistryClient(config)
-    await client.getRegistrySummary()
-    return {
-      label: 'Registry summary',
+    const { payload, upstream } = await requestBackendJson({
+      path: '/analyst/registry/promotion-events',
       method: 'GET',
-      path: '/dashboard/summary',
-      status: 'reachable',
-      message: 'Reachable.',
+      searchParams: new URLSearchParams({ limit: '1' }),
+      requireBackendServiceToken: true,
+      includeCloudflareAccess: true,
+    })
+    if (isRegistryUnavailablePayload(payload)) {
+      return {
+        label: 'Registry proxy',
+        method: 'GET',
+        path: '/analyst/registry/promotion-events',
+        status: 'missing',
+        httpStatus: upstream.status,
+        message: 'Registry evidence is not available through finance-backend yet.',
+      }
+    }
+
+    return {
+      label: 'Registry proxy',
+      method: 'GET',
+      path: '/analyst/registry/promotion-events',
+      status: upstream.ok ? 'reachable' : 'unreachable',
+      httpStatus: upstream.status,
+      message: upstream.ok ? 'Reachable.' : `Responded with HTTP ${upstream.status}.`,
     }
   } catch (error) {
-    const status = error instanceof ModelRegistryClientError ? error.status : undefined
     return {
-      label: 'Registry summary',
+      label: 'Registry proxy',
       method: 'GET',
-      path: '/dashboard/summary',
+      path: '/analyst/registry/promotion-events',
       status: 'unreachable',
-      httpStatus: status,
       message: error instanceof Error ? error.message : 'Registry probe failed.',
     }
   }

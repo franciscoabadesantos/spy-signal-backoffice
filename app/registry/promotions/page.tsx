@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireAdminUser } from '@/lib/admin-auth'
-import { createModelRegistryClient } from '@/lib/model-registry-client'
+import { listPromotionEvents } from '@/lib/registry-backend'
 import { PromotionEventList, RegistryErrorState, RegistryHeader } from '../components'
 
 type PromotionHistoryPageProps = {
@@ -15,12 +15,11 @@ export default async function PromotionHistoryPage({ searchParams }: PromotionHi
   const params = await searchParams
   const candidateId = trimParam(params.candidate_id)
   const limit = parseLimit(params.limit)
-  const client = createModelRegistryClient()
-  let events: Awaited<ReturnType<typeof client.listPromotionEvents>> = []
+  let events: Awaited<ReturnType<typeof listPromotionEvents>> = []
   let error: unknown = null
 
   try {
-    events = await client.listPromotionEvents(candidateId, limit)
+    events = await listPromotionEvents(candidateId, limit)
   } catch (requestError) {
     error = requestError
   }

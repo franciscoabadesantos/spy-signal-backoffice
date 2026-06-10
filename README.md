@@ -13,7 +13,7 @@ Admin-only operational console (separate app) for analyst and data-ops workflows
 - Data Ops health calendar (`/data-ops`)
 - Targeted rebuild/refill job submission + retry history
 - Macro series upsert and release-calendar row upsert job forms
-- Read-only model registry inspection backed by the `finance-model-registry` API (`/registry`)
+- Read-only registry / evidence inspection backed by `finance-backend` registry proxy routes (`/registry`)
 
 ## Environment
 
@@ -26,19 +26,17 @@ Copy `.env.example` to `.env.local` and set:
 - `BACKEND_SERVICE_TOKEN` (required for authenticated backend research/admin calls)
 - `CF_ACCESS_CLIENT_ID` (optional for local localhost dev, required when `finance-backend` is behind Cloudflare Access)
 - `CF_ACCESS_CLIENT_SECRET` (optional for local localhost dev, required when `finance-backend` is behind Cloudflare Access)
-- `MODEL_REGISTRY_API_URL` (for `/registry`, for example `http://localhost:8000`)
-- `MODEL_REGISTRY_API_TIMEOUT_SECONDS` (optional, defaults to `10`)
 
 ## Boundaries
 
 - `/research` launches and inspects orchestrated research experiments through `finance-backend`.
-- `/registry` remains read-only inspection over the `finance-model-registry` HTTP API.
+- `/registry` remains read-only inspection through `finance-backend` registry façade routes.
 - Backoffice does not execute feature engineering, ML training, strategy construction, backtests, or orchestrator logic.
 - Backoffice does not directly access backend Supabase tables, registry DB tables, or other internal databases.
 
 ## Model Registry Views
 
-The `/registry` area is read-only and consumes the `finance-model-registry` HTTP API. It does not read registry Postgres tables or local JSON state directly.
+The `/registry` area is read-only and consumes `finance-backend` registry proxy routes. It does not call the registry service directly from the backoffice.
 
 Implemented views:
 
@@ -52,12 +50,10 @@ Implemented views:
 Useful local check:
 
 ```bash
-MODEL_REGISTRY_API_URL=http://localhost:8000 npm run dev
+BACKEND_BASE_URL=http://localhost:8001 BACKEND_SERVICE_TOKEN=local-dev-token npm run dev
 ```
 
-Then open `/registry` while the `finance-model-registry` API is running. If `MODEL_REGISTRY_API_URL` is missing, unavailable, times out, or returns a stable registry error payload, the UI renders a clear error state instead of attempting any write action.
-
-Registry API auth headers are not yet wired in this pass. The current registry integration supports `MODEL_REGISTRY_API_URL` and timeout configuration only.
+Then open `/registry` while `finance-backend` is running with its registry façade enabled. If the backend reports `registry_unavailable`, the UI renders a safe unavailable state instead of attempting any direct registry access.
 
 ## Research Views
 
@@ -100,5 +96,3 @@ Recommended Vercel production environment variables:
 - `BACKEND_SERVICE_TOKEN`
 - `CF_ACCESS_CLIENT_ID`
 - `CF_ACCESS_CLIENT_SECRET`
-- `MODEL_REGISTRY_API_URL`
-- `MODEL_REGISTRY_API_TIMEOUT_SECONDS`

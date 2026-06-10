@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireAdminUser } from '@/lib/admin-auth'
-import { createModelRegistryClient } from '@/lib/model-registry-client'
+import { getCandidateLineage } from '@/lib/registry-backend'
 import { LineageView, RegistryErrorState, RegistryHeader } from '../../components'
 
 type LineagePageProps = {
@@ -10,12 +10,11 @@ type LineagePageProps = {
 export default async function LineagePage({ params }: LineagePageProps) {
   const admin = await requireAdminUser()
   const { candidateId } = await params
-  const client = createModelRegistryClient()
-  let lineage: Awaited<ReturnType<typeof client.getCandidateLineage>> | null = null
+  let lineage: Awaited<ReturnType<typeof getCandidateLineage>> | null = null
   let error: unknown = null
 
   try {
-    lineage = await client.getCandidateLineage(candidateId)
+    lineage = await getCandidateLineage(candidateId)
   } catch (requestError) {
     error = requestError
   }
