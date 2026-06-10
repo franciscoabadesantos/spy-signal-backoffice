@@ -32,7 +32,7 @@ export function BackofficeHealthPanel({ snapshot }: { snapshot: BackofficeHealth
           label="Registry API"
           status={snapshot.registryApi.status}
           body={snapshot.registryApi.message}
-          footnote={`MODEL_REGISTRY_API_URL: ${snapshot.registryApi.configured ? 'yes' : 'no'}`}
+          footnote={`Backend registry integration: ${snapshot.registryApi.configured ? 'enabled' : 'pending'}`}
         />
         <StatusCard
           label="Clerk / Admin"

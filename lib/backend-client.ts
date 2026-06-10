@@ -83,7 +83,7 @@ export function backendBaseUrlConfigured(): boolean {
 export function backendHeaders({
   includeJsonContentType = true,
   requireBackendServiceToken = false,
-  includeCloudflareAccess = false,
+  includeCloudflareAccess = true,
 }: {
   includeJsonContentType?: boolean
   requireBackendServiceToken?: boolean
@@ -112,7 +112,7 @@ export async function requestBackendJson({
   searchParams,
   body,
   requireBackendServiceToken = false,
-  includeCloudflareAccess = false,
+  includeCloudflareAccess = true,
 }: ProxyBackendJsonOptions): Promise<{ payload: unknown; upstream: Response }> {
   const url = new URL(`${backendBaseUrl()}${path}`)
   if (searchParams) {

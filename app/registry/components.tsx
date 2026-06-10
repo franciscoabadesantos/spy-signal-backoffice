@@ -21,7 +21,9 @@ export function RegistryErrorState({ error }: { error: unknown }) {
       <div>{message}</div>
       {isMissingConfig ? (
         <div className="small" style={{ marginTop: 8 }}>
-          Set `MODEL_REGISTRY_API_URL` to the finance-model-registry API base URL. After that, candidates, bundles, readiness reports, promotion history, and active pointers will appear here.
+          Registry evidence is not available through finance-backend yet.
+          The backoffice expects registry reads to come through backend registry façade routes.
+          Until those backend routes exist, candidate/bundle/readiness/promotion views remain unavailable.
         </div>
       ) : null}
       {status ? <div className="small">HTTP status: {status}</div> : null}

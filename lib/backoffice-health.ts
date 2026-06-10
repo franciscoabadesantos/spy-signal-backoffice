@@ -45,7 +45,7 @@ export async function loadBackofficeHealth(adminEmail: string): Promise<Backoffi
     probeBackendRoute({
       label: 'Backend /health',
       path: '/health',
-      includeCloudflareAccess: false,
+      includeCloudflareAccess: true,
       requireBackendServiceToken: false,
     }),
     probeBackendRoute({
@@ -59,7 +59,7 @@ export async function loadBackofficeHealth(adminEmail: string): Promise<Backoffi
       label: 'Data quality health',
       path: '/analyst/data-ops/health',
       searchParams: new URLSearchParams({ domains: 'market', end_date: checkedAt.slice(0, 10) }),
-      includeCloudflareAccess: false,
+      includeCloudflareAccess: true,
       requireBackendServiceToken: true,
     }),
     probeRegistryRoute(),
@@ -83,7 +83,7 @@ export async function loadBackofficeHealth(adminEmail: string): Promise<Backoffi
     registryApi: {
       status: registryConfigured ? registryProbe.status : 'missing',
       configured: registryConfigured,
-      message: registryConfigured ? registryProbe.message : 'MODEL_REGISTRY_API_URL is not configured.',
+      message: registryConfigured ? registryProbe.message : 'Backend registry façade is pending.',
     },
     routeChecks,
   }
@@ -142,7 +142,7 @@ async function probeRegistryRoute(): Promise<RouteProbe> {
       method: 'GET',
       path: '/dashboard/summary',
       status: 'missing',
-      message: 'MODEL_REGISTRY_API_URL is not configured.',
+      message: 'Backend registry façade is pending.',
     }
   }
 

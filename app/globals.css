@@ -83,7 +83,6 @@ body {
   margin: 8px 0 12px;
   font-size: clamp(32px, 4vw, 48px);
   line-height: 1.05;
-  max-width: 13ch;
 }
 
 .eyebrow {
@@ -137,6 +136,7 @@ body {
   padding: 16px;
   margin-bottom: 16px;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+  min-width: 0;
 }
 
 .row {
@@ -315,6 +315,8 @@ button:disabled {
 
 pre {
   white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
   background: #0f172a;
   color: #e2e8f0;
   border-radius: 10px;
@@ -362,11 +364,12 @@ pre {
 .field-value {
   min-height: 22px;
   overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .table-wrap {
   width: 100%;
-  overflow: auto;
+  overflow-x: auto;
   border: 1px solid #dbe3f0;
   border-radius: 10px;
 }
