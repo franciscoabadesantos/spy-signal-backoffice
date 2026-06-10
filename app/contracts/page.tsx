@@ -93,6 +93,25 @@ const MISSING_CONTRACTS = [
   'data-ops issue drilldown/repair preview',
 ]
 
+const SIGNAL_EVALUATION_REQUIRED_CONTRACTS = [
+  ['candidate/model universe list', 'partial', 'backend / registry', '/signals', 'Registry candidates and research experiments exist, but there is no normalized universe endpoint for all comparable models/signals.'],
+  ['normalized comparison summary', 'partial', 'backend', '/signals', 'Backoffice derives rows from current signal, research, and registry payloads; no normalized comparison contract exists.'],
+  ['IC series', 'missing', 'backend / research orchestrator', '/signals', 'No standard ic_series field is exposed for selected model/candidate charts.'],
+  ['rolling IC series', 'missing', 'backend / research orchestrator', '/signals', 'No rolling_ic_series contract is exposed.'],
+  ['forward returns by signal date/horizon', 'partial', 'backend', '/signals', 'Signal history has realized_return for official ticker history, but no candidate/model forward-return series contract exists.'],
+  ['cumulative return/equity curve', 'artifact-only', 'research orchestrator / backend', '/signals', 'Backtest artifacts may contain references, but Backoffice has no artifact-to-chart extraction contract.'],
+  ['drawdown series', 'artifact-only', 'research orchestrator / backend', '/signals', 'Backtest artifacts may contain references, but no normalized drawdown series is exposed.'],
+  ['turnover series', 'missing', 'backend / strategy lab', '/signals', 'No turnover time-series contract is exposed.'],
+  ['confidence calibration', 'missing', 'backend / ML lab', '/signals', 'No calibration bins or confidence-quality contract is exposed.'],
+  ['regime breakdown', 'missing', 'backend / research orchestrator', '/signals', 'No regime breakdown contract is exposed.'],
+  ['decay/live-vs-backtest divergence', 'missing', 'backend / future', '/signals', 'No production-vs-backtest divergence contract exists.'],
+  ['official active model/candidate lineage', 'partial', 'registry / backend', '/signals', 'Registry active pointers exist, but there is no official signal lineage endpoint tied to live signal history.'],
+  ['paper/shadow candidate signal stream', 'missing', 'backend / future', '/signals', 'No paper/shadow signal stream exists.'],
+  ['candidate-vs-official disagreement performance', 'missing', 'backend / future', '/signals', 'No disagreement-performance contract exists.'],
+  ['launch signal test/model experiment', 'partial', 'backend / research orchestrator', '/signals, /research', 'Single research experiment creation exists; dynamic signal-test launch is not standardized.'],
+  ['campaign/model-template catalog', 'missing', 'backend / future', '/signals, /research', 'No template catalog or campaign expansion contract exists.'],
+]
+
 export default async function ContractsPage() {
   const admin = await requireAdminUser()
 
@@ -117,6 +136,35 @@ export default async function ContractsPage() {
         <p className="small">
           Operators and developers need one place to see what is real, what is only UI, and which backend contract is missing. This page does not create backend capabilities; it documents the current Backoffice contract surface.
         </p>
+      </div>
+
+      <div className="card">
+        <h2>Signal Evaluation Required Contracts</h2>
+        <p className="small">These contracts define what the Signal Evaluation Lab needs to compare many candidates/models and render model-quality evidence without fake metrics.</p>
+        <div className="table-wrap">
+          <table className="registry-table">
+            <thead>
+              <tr>
+                <th>Contract</th>
+                <th>Current status</th>
+                <th>Expected owner</th>
+                <th>Needed by</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SIGNAL_EVALUATION_REQUIRED_CONTRACTS.map(([contract, status, owner, page, notes]) => (
+                <tr key={contract}>
+                  <td>{contract}</td>
+                  <td><span className={contractStatusClass(status)}>{status}</span></td>
+                  <td>{owner}</td>
+                  <td>{page}</td>
+                  <td>{notes}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {AVAILABLE_CONTRACTS.map((group) => (
@@ -158,4 +206,10 @@ export default async function ContractsPage() {
       </div>
     </div>
   )
+}
+
+function contractStatusClass(status: string): string {
+  if (status === 'available') return 'badge completed'
+  if (status === 'partial' || status === 'artifact-only') return 'badge running'
+  return 'badge backend-gap'
 }
