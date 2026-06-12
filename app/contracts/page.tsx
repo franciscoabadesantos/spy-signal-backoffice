@@ -103,9 +103,9 @@ const SIGNAL_EVALUATION_REQUIRED_CONTRACTS = [
   ['IC series', 'V1 gap-backed', 'backend / research orchestrator', '/signals', 'V1 returns series containers and backend gaps; it does not compute/populate IC points.'],
   ['rolling IC series', 'V1 gap-backed', 'backend / research orchestrator', '/signals', 'V1 returns structured gaps for rolling IC series.'],
   ['forward returns by signal date/horizon', 'V1 gap-backed', 'backend', '/signals', 'V1 does not compute candidate/model forward-return time series.'],
-  ['cumulative return/equity curve', 'V1 gap-backed', 'research orchestrator / backend', '/signals', 'V1 can expose artifact refs and gaps, but does not dereference artifacts into equity curve points.'],
-  ['drawdown series', 'V1 gap-backed', 'research orchestrator / backend', '/signals', 'V1 can expose artifact refs and gaps, but does not normalize drawdown points.'],
-  ['turnover series', 'V1 gap-backed', 'backend / strategy lab', '/signals', 'V1 returns structured gaps for turnover series.'],
+  ['cumulative return/equity curve', 'backend-supported when configured', 'research orchestrator / backend', '/signals', 'Signal Evaluation Series V1 can populate report.series.equity_curve.points when artifact roots/readers are configured; otherwise it returns artifact_reader_disabled or related gaps.'],
+  ['drawdown series', 'backend-supported when configured', 'research orchestrator / backend', '/signals', 'Signal Evaluation Series V1 can populate report.series.drawdown.points when artifact roots/readers are configured; otherwise it returns artifact_reader_disabled or related gaps.'],
+  ['turnover series', 'backend-supported when configured', 'backend / strategy lab', '/signals', 'Signal Evaluation Series V1 can populate report.series.turnover.points when artifact roots/readers are configured; otherwise it returns artifact_reader_disabled or related gaps.'],
   ['confidence calibration', 'V1 gap-backed', 'backend / ML lab', '/signals', 'V1 returns structured gaps for confidence calibration.'],
   ['regime breakdown', 'V1 gap-backed', 'backend / research orchestrator', '/signals', 'V1 returns structured gaps for regime breakdown.'],
   ['decay/live-vs-backtest divergence', 'V1 gap-backed', 'backend / future', '/signals', 'V1 returns structured gaps for decay/live-vs-backtest divergence.'],
@@ -214,6 +214,6 @@ export default async function ContractsPage() {
 
 function contractStatusClass(status: string): string {
   if (status === 'available') return 'badge completed'
-  if (status === 'partial' || status === 'artifact-only' || status === 'V1 gap-backed') return 'badge running'
+  if (status === 'partial' || status === 'artifact-only' || status === 'V1 gap-backed' || status === 'backend-supported when configured') return 'badge running'
   return 'badge backend-gap'
 }

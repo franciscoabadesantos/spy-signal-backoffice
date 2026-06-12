@@ -597,12 +597,14 @@ function ChartPanel({ seriesKey, report }: { seriesKey: string; report: SignalEv
   const series = report?.series?.[seriesKey]
   const points = Array.isArray(series?.points) ? series.points : []
   const values = pointsToValues(points, series?.y_field)
+  const unit = seriesUnitLabel(seriesKey, series?.unit)
   return (
     <div className="chart-panel">
       <div className="split-row">
         <strong>{series?.label ?? labelFromKey(seriesKey)}</strong>
         <span className={values.length > 0 ? 'badge completed' : 'badge backend-gap'}>{values.length > 0 ? 'available' : 'gap-backed'}</span>
       </div>
+      {unit ? <p className="small">Unit: {unit}</p> : null}
       {values.length > 0 ? (
         <>
           <MiniSeriesChart values={values} />
@@ -699,6 +701,10 @@ function SelectedDetailPanel({
         <details>
           <summary>Raw refs / evidence</summary>
           <JsonBlock value={report?.raw_evidence ?? selectedRow.raw} />
+        </details>
+        <details>
+          <summary>Raw report JSON</summary>
+          <JsonBlock value={report ?? {}} />
         </details>
       </div>
       <GapList gaps={[...(candidate.gaps ?? []), ...(report?.gaps ?? [])]} emptyLabel="No candidate-level gaps returned." />
@@ -974,4 +980,13 @@ function pointsToValues(points: Array<Record<string, unknown>>, yField = 'value'
 
 function labelFromKey(key: string): string {
   return key.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
+}
+
+function seriesUnitLabel(seriesKey: string, unit?: string | null): string {
+  const normalizedUnit = unit?.trim()
+  if (normalizedUnit) return normalizedUnit
+  if (seriesKey === 'equity_curve') return 'cumulative/equity value'
+  if (seriesKey === 'drawdown') return 'negative or zero ratio/percentage'
+  if (seriesKey === 'turnover') return 'ratio/percentage'
+  return ''
 }
