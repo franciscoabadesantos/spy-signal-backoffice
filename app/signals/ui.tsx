@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
 import { ApiErrorBox, DynamicTable, EmptyState, JsonBlock, asRecord, readArrayPayload } from '@/app/components/workspace-data'
+import { CopyableId } from '@/components/ui/CopyableId'
 
 type SourceFilter = 'all' | 'official' | 'research' | 'registry' | 'paper' | 'unknown'
 
@@ -170,13 +171,13 @@ const COMPARISON_COLUMNS = [
 ]
 
 const CHART_SERIES = [
+  'equity_curve',
+  'drawdown',
+  'turnover',
   'ic_evolution',
   'rolling_ic',
   'cumulative_ic',
   'forward_returns',
-  'equity_curve',
-  'drawdown',
-  'turnover',
   'signal_distribution',
   'confidence_calibration',
   'regime_breakdown',
@@ -427,10 +428,6 @@ export default function SignalsWorkspace({ adminEmail }: { adminEmail: string })
             <label>Sources metadata</label>
             <JsonBlock value={evaluationList.sources ?? {}} />
           </div>
-          <div className="card compact-card">
-            <label>Top-level gaps</label>
-            <GapList gaps={evaluationList.gaps ?? []} emptyLabel="No top-level Signal Evaluation V1 gaps returned." />
-          </div>
         </div>
         <div className="field-grid">
           <div>
@@ -457,7 +454,12 @@ export default function SignalsWorkspace({ adminEmail }: { adminEmail: string })
             ))}
           </div>
         </div>
-        <SelectedDetailPanel loading={reportLoading} report={selectedReport} selectedRow={selectedRow} />
+        <SelectedDetailPanel
+          loading={reportLoading}
+          report={selectedReport}
+          selectedRow={selectedRow}
+          topLevelGaps={evaluationList.gaps ?? []}
+        />
       </section>
 
       <RunSignalTestPanel
@@ -511,11 +513,6 @@ export default function SignalsWorkspace({ adminEmail }: { adminEmail: string })
         </div>
       </section>
 
-      <section className="card">
-        <h2>Backend Gaps for Signal Evaluation</h2>
-        <p className="small">These are returned by Signal Evaluation V1 at list, candidate, report, or series level. They are displayed here directly from backend responses.</p>
-        <GapList gaps={[...(evaluationList.gaps ?? []), ...(selectedReport?.gaps ?? [])]} emptyLabel="No backend gaps returned for the current selection." />
-      </section>
     </div>
   )
 }
@@ -558,7 +555,12 @@ function ComparisonTable({
                 />
               </td>
               <td><span className={`badge ${sourceBadgeClass(row.source)}`}>{row.sourceType}</span></td>
-              <td>{row.label}</td>
+              <td>
+                <div className="id-cell">
+                  {row.label !== row.id ? <span>{row.label}</span> : null}
+                  <CopyableId id={row.id} maxLen={16} />
+                </div>
+              </td>
               <td>{row.tickerUniverse}</td>
               <td>{row.horizon}</td>
               <td>{row.latestSignal}</td>
@@ -614,25 +616,34 @@ function ChartPanel({ seriesKey, report }: { seriesKey: string; report: SignalEv
           </details>
         </>
       ) : (
-        <GapList gaps={series?.gaps ?? report?.gaps ?? []} emptyLabel={`${labelFromKey(seriesKey)} has no points and no backend gap detail was returned.`} />
+        <div className="chart-empty">No points returned. Missing evidence is summarized below the selected detail.</div>
       )}
     </div>
   )
 }
 
 function MiniSeriesChart({ values }: { values: number[] }) {
-  const width = 220
-  const height = 72
+  const width = 320
+  const height = 160
+  const margin = { top: 14, right: 12, bottom: 28, left: 40 }
+  const plotWidth = width - margin.left - margin.right
+  const plotHeight = height - margin.top - margin.bottom
   const min = Math.min(...values)
   const max = Math.max(...values)
   const span = max - min || 1
   const points = values.map((value, index) => {
-    const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * width
-    const y = height - ((value - min) / span) * height
+    const x = margin.left + (values.length === 1 ? plotWidth / 2 : (index / (values.length - 1)) * plotWidth)
+    const y = margin.top + plotHeight - ((value - min) / span) * plotHeight
     return `${x},${y}`
   }).join(' ')
   return (
     <svg aria-label="Available evaluation series chart" className="mini-chart" role="img" viewBox={`0 0 ${width} ${height}`}>
+      <line className="mini-chart-axis" x1={margin.left} x2={margin.left} y1={margin.top} y2={margin.top + plotHeight} />
+      <line className="mini-chart-axis" x1={margin.left} x2={margin.left + plotWidth} y1={margin.top + plotHeight} y2={margin.top + plotHeight} />
+      <text className="mini-chart-label" x={margin.left - 8} y={margin.top + 4} textAnchor="end">{formatAxisValue(max)}</text>
+      <text className="mini-chart-label" x={margin.left - 8} y={margin.top + plotHeight} textAnchor="end">{formatAxisValue(min)}</text>
+      <text className="mini-chart-label" x={margin.left} y={height - 8}>0</text>
+      <text className="mini-chart-label" x={margin.left + plotWidth} y={height - 8} textAnchor="end">{values.length - 1}</text>
       <polyline fill="none" points={points} stroke="#0f766e" strokeWidth="3" />
     </svg>
   )
@@ -642,10 +653,12 @@ function SelectedDetailPanel({
   loading,
   report,
   selectedRow,
+  topLevelGaps,
 }: {
   loading: boolean
   report: SignalEvaluationReport | null
   selectedRow: ComparisonRow | null
+  topLevelGaps: SignalEvaluationGap[]
 }) {
   if (!selectedRow) {
     return (
@@ -658,20 +671,21 @@ function SelectedDetailPanel({
 
   const candidate = report?.candidate ?? selectedRow.candidate
   const links = candidate.links ?? {}
+  const missingEvidence = collectMissingEvidence(candidate, report, topLevelGaps)
   return (
     <div className="card detail-panel">
       <p className="eyebrow">Selected Signal / Model Detail</p>
       <h2>{candidate.display_name ?? candidate.candidate_id}</h2>
       {loading ? <p className="small">Loading report...</p> : null}
       <div className="field-grid">
-        <DetailField label="Candidate ID" value={candidate.candidate_id} />
+        <DetailField label="Candidate ID" value={candidate.candidate_id} copy />
         <DetailField label="Source" value={candidate.source_type} />
         <DetailField label="Status" value={candidate.status ?? '—'} />
         <DetailField label="Scope" value={scopeText(candidate)} />
         <DetailField label="Horizon" value={candidate.horizon ?? '—'} />
-        <DetailField label="Research experiment" value={links.research_experiment_id ?? '—'} />
-        <DetailField label="Registry candidate" value={links.registry_candidate_id ?? '—'} />
-        <DetailField label="Bundle" value={links.bundle_id ?? '—'} />
+        <DetailField label="Research experiment" value={links.research_experiment_id ?? '—'} copy={Boolean(links.research_experiment_id)} />
+        <DetailField label="Registry candidate" value={links.registry_candidate_id ?? '—'} copy={Boolean(links.registry_candidate_id)} />
+        <DetailField label="Bundle" value={links.bundle_id ?? '—'} copy={Boolean(links.bundle_id)} />
       </div>
       <div className="details-grid">
         <details open>
@@ -707,16 +721,16 @@ function SelectedDetailPanel({
           <JsonBlock value={report ?? {}} />
         </details>
       </div>
-      <GapList gaps={[...(candidate.gaps ?? []), ...(report?.gaps ?? [])]} emptyLabel="No candidate-level gaps returned." />
+      <MissingEvidenceDetails gaps={missingEvidence} />
     </div>
   )
 }
 
-function DetailField({ label, value }: { label: string; value: string }) {
+function DetailField({ label, value, copy = false }: { label: string; value: string; copy?: boolean }) {
   return (
     <div>
       <label>{label}</label>
-      <div>{value}</div>
+      <div>{copy && value !== '—' ? <CopyableId id={value} maxLen={value.length} /> : value}</div>
     </div>
   )
 }
@@ -837,20 +851,63 @@ function RunSignalTestPanel({
   )
 }
 
-function GapList({ gaps, emptyLabel }: { gaps: SignalEvaluationGap[]; emptyLabel: string }) {
-  if (!gaps.length) return <EmptyState>{emptyLabel}</EmptyState>
+function MissingEvidenceDetails({ gaps }: { gaps: SignalEvaluationGap[] }) {
+  if (!gaps.length) {
+    return (
+      <details className="missing-evidence-details">
+        <summary>Missing evidence (0)</summary>
+        <p className="small">No missing evidence returned for the selected candidate.</p>
+      </details>
+    )
+  }
+
   return (
-    <div className="list-stack">
-      {gaps.map((gap, index) => (
-        <div className="gap-note" key={`${gap.code ?? 'gap'}-${index}`}>
-          <strong>{gap.code ?? 'gap'}</strong>
-          <div>{gap.message ?? 'No message returned.'}</div>
-          {gap.expected ? <div className="small">Expected: {gap.expected}</div> : null}
-          {gap.source ? <div className="small">Source: {gap.source}</div> : null}
-        </div>
-      ))}
-    </div>
+    <details className="missing-evidence-details">
+      <summary>Missing evidence ({gaps.length})</summary>
+      <ul className="plain-list missing-evidence-list">
+        {gaps.map((gap, index) => (
+          <li key={`${gap.code ?? 'gap'}-${index}`}>{formatGapSummary(gap)}</li>
+        ))}
+      </ul>
+    </details>
   )
+}
+
+function collectMissingEvidence(
+  candidate: SignalEvaluationCandidateSummary,
+  report: SignalEvaluationReport | null,
+  topLevelGaps: SignalEvaluationGap[]
+): SignalEvaluationGap[] {
+  const seriesGaps = Object.values(report?.series ?? {}).flatMap((series) => series.gaps ?? [])
+  const gaps = [
+    ...topLevelGaps,
+    ...(candidate.gaps ?? []),
+    ...(report?.gaps ?? []),
+    ...seriesGaps,
+  ]
+  const seen = new Set<string>()
+  return gaps.filter((gap) => {
+    const key = `${gap.code ?? ''}|${gap.message ?? ''}|${gap.source ?? ''}|${gap.expected ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function formatGapSummary(gap: SignalEvaluationGap): string {
+  const label = gapLabel(gap)
+  const reason = gap.expected || gap.message || 'backend contract not yet available'
+  return `${label} — ${reason}`
+}
+
+function gapLabel(gap: SignalEvaluationGap): string {
+  const code = gap.code?.trim()
+  const source = gap.source?.trim()
+  const message = gap.message?.trim()
+  if (code) return labelFromKey(code)
+  if (source) return labelFromKey(source)
+  if (message) return message
+  return 'Evidence'
 }
 
 function candidateToRow(candidate: SignalEvaluationCandidateSummary): ComparisonRow {
@@ -979,7 +1036,23 @@ function pointsToValues(points: Array<Record<string, unknown>>, yField = 'value'
 }
 
 function labelFromKey(key: string): string {
-  return key.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
+  const labels: Record<string, string> = {
+    equity_curve: 'Equity curve',
+    drawdown: 'Drawdown',
+    turnover: 'Turnover',
+    ic_evolution: 'IC evolution',
+    rolling_ic: 'Rolling IC',
+    cumulative_ic: 'Cumulative IC',
+    forward_returns: 'Forward returns',
+    signal_distribution: 'Signal distribution',
+    confidence_calibration: 'Confidence calibration',
+    regime_breakdown: 'Regime breakdown',
+    official_disagreement: 'Official disagreement',
+    decay_divergence: 'Decay divergence',
+  }
+  if (labels[key]) return labels[key]
+  const text = key.replace(/[_-]+/g, ' ').trim()
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : 'Evidence'
 }
 
 function seriesUnitLabel(seriesKey: string, unit?: string | null): string {
@@ -989,4 +1062,10 @@ function seriesUnitLabel(seriesKey: string, unit?: string | null): string {
   if (seriesKey === 'drawdown') return 'negative or zero ratio/percentage'
   if (seriesKey === 'turnover') return 'ratio/percentage'
   return ''
+}
+
+function formatAxisValue(value: number): string {
+  if (Math.abs(value) >= 100) return value.toFixed(0)
+  if (Math.abs(value) >= 10) return value.toFixed(1)
+  return value.toFixed(2)
 }

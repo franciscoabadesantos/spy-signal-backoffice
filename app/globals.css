@@ -374,6 +374,38 @@ details summary {
   text-underline-offset: 3px;
 }
 
+.copyable-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  max-width: 100%;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #0f172a;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.copyable-id-check {
+  color: #16a34a;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+.id-cell {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
 .split-row {
   display: flex;
   align-items: flex-start;
@@ -714,7 +746,7 @@ details summary {
 .chart-panel {
   display: grid;
   gap: 10px;
-  min-height: 150px;
+  min-height: 230px;
   padding: 12px;
   border: 1px solid #dbe3f0;
   border-radius: 12px;
@@ -723,13 +755,36 @@ details summary {
 
 .mini-chart {
   width: 100%;
-  height: 92px;
+  height: 180px;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   background:
     linear-gradient(90deg, rgba(148, 163, 184, 0.14) 1px, transparent 1px),
     linear-gradient(180deg, rgba(148, 163, 184, 0.14) 1px, transparent 1px);
   background-size: 44px 23px;
+}
+
+.mini-chart-axis {
+  stroke: #94a3b8;
+  stroke-width: 1;
+}
+
+.mini-chart-label {
+  fill: #64748b;
+  font-size: 10px;
+}
+
+.chart-empty {
+  display: flex;
+  align-items: center;
+  min-height: 180px;
+  padding: 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  color: #64748b;
+  background: #f8fafc;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .detail-panel {
@@ -749,6 +804,27 @@ details summary {
 
 .signal-composition-card {
   margin-top: 16px;
+}
+
+.missing-evidence-details {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-top: 1px solid #e2e8f0;
+  color: #475569;
+}
+
+.missing-evidence-details summary {
+  color: #334155;
+  font-size: 13px;
+}
+
+.missing-evidence-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .section-link-card {
