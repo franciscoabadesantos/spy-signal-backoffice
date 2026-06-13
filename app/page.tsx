@@ -21,8 +21,8 @@ type FeedItem = {
   tone: 'green' | 'amber' | 'red' | 'blue'
 }
 
-const DEFAULT_CONTROL_ROOM_TIMEOUT_MS = 8000
-const DATA_HEALTH_TIMEOUT_MS = 12000
+const DEFAULT_CONTROL_ROOM_TIMEOUT_MS = 2500
+const DATA_HEALTH_TIMEOUT_MS = 2500
 
 export default async function HomePage() {
   await requireAdminUser()
@@ -348,9 +348,6 @@ async function fetchWithTimeout(options: BackendRequestOptions, label: string, t
       return null
     }
     console.info(`[control-room] ${label} completed in ${elapsedMs}ms`)
-    if (label === 'data health') {
-      console.info('[control-room] data health raw response', JSON.stringify(result.payload).slice(0, 4000))
-    }
     return result
   } catch (error) {
     if (timer) clearTimeout(timer)

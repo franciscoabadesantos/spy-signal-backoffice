@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
+import { requestClientJson } from '@/lib/client-json'
 
 export type SidebarDot = 'green' | 'amber' | 'red' | 'gray'
 
@@ -30,6 +32,7 @@ type Props = {
   health: SidebarHealth
   candidateCount?: number
   failedJobCount?: number
+  loadStatus?: boolean
 }
 
 function Dot({ color }: { color: SidebarDot }) {
@@ -38,29 +41,54 @@ function Dot({ color }: { color: SidebarDot }) {
   )
 }
 
-export function Sidebar({ health, candidateCount, failedJobCount }: Props) {
+export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = false }: Props) {
   const pathname = usePathname()
+  const [sidebarHealth, setSidebarHealth] = useState(health)
+  const [sidebarCandidateCount, setSidebarCandidateCount] = useState(candidateCount)
+  const [sidebarFailedJobCount, setSidebarFailedJobCount] = useState(failedJobCount)
   const isActive = (href: string) => href === '/' ? pathname === '/' : pathname.startsWith(href)
+
+  useEffect(() => {
+    if (!loadStatus) return
+    let cancelled = false
+
+    async function loadSidebarStatus() {
+      try {
+        const payload = await requestClientJson('/api/sidebar-state')
+        if (cancelled || !isSidebarState(payload)) return
+        setSidebarHealth(payload.health)
+        setSidebarCandidateCount(payload.candidateCount)
+        setSidebarFailedJobCount(payload.failedJobCount)
+      } catch {
+        // Sidebar health is non-critical; keep the initial gray state on failure.
+      }
+    }
+
+    void loadSidebarStatus()
+    return () => {
+      cancelled = true
+    }
+  }, [loadStatus])
 
   const sections: NavSection[] = [
     {
       label: '',
       items: [
-        { label: 'Overview', href: '/', dot: health.system },
+        { label: 'Overview', href: '/', dot: sidebarHealth.system },
       ],
     },
     {
       label: 'Data',
       items: [
-        { label: 'Data', href: '/data', dot: health.data },
+        { label: 'Data', href: '/data', dot: sidebarHealth.data },
       ],
     },
     {
       label: 'Pipeline',
       items: [
-        { label: 'Signals', href: '/signals', dot: health.signals, badge: candidateCount },
-        { label: 'Research', href: '/research', dot: health.research },
-        { label: 'Registry', href: '/registry', dot: health.registry },
+        { label: 'Signals', href: '/signals', dot: sidebarHealth.signals, badge: sidebarCandidateCount },
+        { label: 'Research', href: '/research', dot: sidebarHealth.research },
+        { label: 'Registry', href: '/registry', dot: sidebarHealth.registry },
       ],
     },
     {
@@ -76,10 +104,10 @@ export function Sidebar({ health, candidateCount, failedJobCount }: Props) {
         {
           label: 'Operations',
           href: '/operations',
-          dot: health.operations,
-          badge: failedJobCount ? `${failedJobCount} fail` : undefined,
+          dot: sidebarHealth.operations,
+          badge: sidebarFailedJobCount ? `${sidebarFailedJobCount} fail` : undefined,
         },
-        { label: 'System', href: '/diagnostics', dot: health.system },
+        { label: 'System', href: '/diagnostics', dot: sidebarHealth.system },
         { label: 'Contracts', href: '/contracts', dot: 'gray' },
       ],
     },
@@ -113,4 +141,14 @@ export function Sidebar({ health, candidateCount, failedJobCount }: Props) {
       <div className="sidebar-footer">admin</div>
     </aside>
   )
+}
+
+function isSidebarState(payload: unknown): payload is {
+  health: SidebarHealth
+  candidateCount?: number
+  failedJobCount?: number
+} {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
+  const record = payload as Record<string, unknown>
+  return Boolean(record.health && typeof record.health === 'object' && !Array.isArray(record.health))
 }
