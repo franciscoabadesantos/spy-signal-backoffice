@@ -114,7 +114,7 @@ export default function DataWorkspace({ adminEmail, initialDomain, initialEntity
       setInventoryLoading(true)
       setInventoryError(null)
       try {
-        const payload = await requestClientJson('/api/data-ops/inventory?limit=1000') as InventoryResponse
+        const payload = await requestClientJson('/api/data-ops/inventory?limit=250') as InventoryResponse
         if (cancelled) return
         const items = Array.isArray(payload.items) ? payload.items : []
         setInventory(items)
@@ -211,9 +211,9 @@ export default function DataWorkspace({ adminEmail, initialDomain, initialEntity
       ) : null}
 
       <div className="metric-grid">
-        <KpiCard label="Entities" value={inventoryLoading ? '...' : String(inventory.length)} sub="Loaded from data-ops inventory" />
-        <KpiCard label="With gaps" value={inventoryLoading ? '...' : String(brokenCount)} sub="Strict missing-range count is nonzero" />
-        <KpiCard label="Unknown cadence" value={inventoryLoading ? '...' : String(unknownCount)} sub="Backend could not prove expected dates" />
+        <KpiCard label="Entities sampled" value={inventoryLoading ? '...' : String(inventory.length)} sub="Loaded from fast data-ops inventory" />
+        <KpiCard label="Flagged in inventory" value={inventoryLoading ? '...' : String(brokenCount)} sub="Only cheap inventory-level signals" />
+        <KpiCard label="Needs coverage check" value={inventoryLoading ? '...' : String(unknownCount)} sub="Select an entity for exact gaps" />
       </div>
 
       <div className="data-workspace-grid">
@@ -260,7 +260,7 @@ export default function DataWorkspace({ adminEmail, initialDomain, initialEntity
                 </span>
                 <span className="inventory-range">
                   <span>{formatRange(item.first_available_date, item.latest_available_date)}</span>
-                  <span className="small">{item.row_count} rows</span>
+                  <span className="small">{item.row_count} sampled rows</span>
                 </span>
                 <span className={`badge ${badgeClass(item.status)}`}>{statusLabel(item.status)}</span>
               </button>
