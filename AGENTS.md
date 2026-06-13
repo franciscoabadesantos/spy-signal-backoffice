@@ -37,10 +37,10 @@ On Linux, if Chrome fails with missing shared libraries, run:
 agent-browser install --with-deps
 ```
 
-Basic verification flow:
+Basic verification flow for the Data tab:
 
 ```bash
-agent-browser open 'http://localhost:3000/data?start_date=2026-03-16&end_date=2026-06-13'
+agent-browser open 'http://localhost:3000/data?domain=market&entity=SPY&month=2026-06'
 agent-browser wait --load networkidle
 agent-browser screenshot --full
 agent-browser snapshot -i
@@ -93,6 +93,23 @@ curl -i "$BACKEND_BASE_URL/health" \
 ```
 
 Expected result is `HTTP/2 200` with `{"status":"ok"}` or equivalent JSON.
+
+## Data Ops Contract
+
+The `/data` page uses the new backend contract only:
+
+- `GET /analyst/data-ops/inventory`
+- `GET /analyst/data-ops/coverage`
+
+There is intentionally no fallback to `/analyst/data-ops/health`. If either new endpoint is missing, returns non-JSON, or returns an upstream error, the UI must show `Data Ops contract unavailable` instead of fabricated coverage.
+
+When the live backend has not deployed these routes yet, verify the page with a temporary local mock backend that implements only the new endpoints, then start Next.js against it:
+
+```bash
+ADMIN_AUTH_BYPASS=true BACKEND_BASE_URL=http://localhost:8787 BACKEND_SERVICE_TOKEN=local-dev-token npm run dev
+```
+
+Do not commit mock fallback behavior into the app.
 
 ## Before Finishing
 

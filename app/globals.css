@@ -1369,6 +1369,156 @@ details summary {
   padding-right: 4px;
 }
 
+.data-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.95fr) minmax(520px, 1.45fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.inventory-panel {
+  min-width: 0;
+}
+
+.data-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(180px, 1.2fr);
+  gap: 10px;
+  margin: 14px 0;
+  align-items: end;
+}
+
+.data-inventory-list {
+  display: grid;
+  gap: 8px;
+  max-height: 620px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.inventory-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(150px, 1.1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid #dbe3f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+  color: #0f172a;
+  text-align: left;
+}
+
+.inventory-row:hover,
+.inventory-row.selected {
+  border-color: #0f172a;
+  background: #f8fafc;
+}
+
+.inventory-row strong,
+.inventory-row span {
+  display: grid;
+  min-width: 0;
+}
+
+.inventory-range {
+  color: #334155;
+  font-size: 12px;
+}
+
+.month-toolbar {
+  display: grid;
+  grid-template-columns: 120px minmax(160px, 1fr) 120px;
+  gap: 10px;
+  align-items: end;
+  margin: 14px 0;
+}
+
+.coverage-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #dbe3f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.coverage-summary.loading {
+  display: block;
+  color: #475569;
+}
+
+.coverage-summary strong {
+  display: block;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.single-calendar {
+  display: grid;
+  gap: 10px;
+}
+
+.calendar-day {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: center;
+  justify-items: center;
+  min-height: 52px;
+}
+
+.calendar-day small {
+  min-height: 12px;
+  color: inherit;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.calendar-day.selected {
+  outline: 2px solid #0f172a;
+  outline-offset: 1px;
+}
+
+.calendar-day.not-expected {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+  color: #94a3b8;
+}
+
+.calendar-day.unknown {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.calendar-swatch.not-expected {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.calendar-swatch.unknown {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+.repair-drawer {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+}
+
+.drawer-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     display: block;
@@ -1403,6 +1553,10 @@ details summary {
   }
 
   .metric-grid,
+  .data-workspace-grid,
+  .data-filter-bar,
+  .month-toolbar,
+  .coverage-summary,
   .data-range-form,
   .data-range-actions,
   .control-kpi-grid,

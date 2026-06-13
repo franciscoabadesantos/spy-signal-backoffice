@@ -10,6 +10,7 @@ Admin-only operational console (separate app) for analyst and data-ops workflows
 - Research experiment launch and inspection backed by `finance-backend` (`/research`)
 - Job status polling and persisted result rendering
 - Recent jobs history with failed-job retry
+- Data inventory and entity-level coverage inspection (`/data`)
 - Data Ops health calendar (`/data-ops`)
 - Targeted rebuild/refill job submission + retry history
 - Macro series upsert and release-calendar row upsert job forms
@@ -67,6 +68,15 @@ The `/research` area is an admin UI for launching and observing orchestrated res
 
 The browser never receives `BACKEND_SERVICE_TOKEN` directly. All research requests go through Next server route handlers in this repo.
 When configured, those server-side research proxy handlers also attach `CF-Access-Client-Id` and `CF-Access-Client-Secret` for Cloudflare Access. If the Cloudflare vars are unset, the same research proxies still work for local development against an unprotected localhost backend.
+
+## Data View
+
+The `/data` page is an inventory-first operational view backed by these `finance-backend` routes:
+
+- `GET /analyst/data-ops/inventory`
+- `GET /analyst/data-ops/coverage`
+
+It does not fall back to the legacy `/analyst/data-ops/health` contract. If the new contract is unavailable, the page renders a visible `Data Ops contract unavailable` state with the endpoint and status instead of showing guessed coverage.
 
 ## Development
 
