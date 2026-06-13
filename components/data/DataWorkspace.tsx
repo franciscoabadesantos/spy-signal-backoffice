@@ -275,7 +275,7 @@ export default function DataWorkspace({ adminEmail, initialDomain, initialEntity
               <div className="split-row">
                 <div>
                   <p className="eyebrow">{selected.domain}</p>
-                  <h2>{selected.entity_key}</h2>
+                  <h2>{selected.domain} / {selected.entity_key}</h2>
                   <p className="small">
                     Available {formatRange(selected.first_available_date, selected.latest_available_date)}. Calendar: {selected.expected_calendar}.
                   </p>
@@ -514,7 +514,13 @@ function selectInitialItem(items: InventoryItem[], initialDomain?: string, initi
     const match = items.find((item) => item.domain === initialDomain && item.entity_key.toLowerCase() === initialEntity.toLowerCase())
     if (match) return match
   }
-  return items.find((item) => item.status === 'missing') ?? items[0] ?? null
+  return (
+    items.find((item) => item.domain === 'market' && item.entity_key === 'SPY') ??
+    items.find((item) => item.domain === 'market') ??
+    items.find((item) => item.status === 'missing') ??
+    items[0] ??
+    null
+  )
 }
 
 function coverageMatchesSelectionAndMonth(coverage: CoverageResponse | null, selected: InventoryItem, month: string): coverage is CoverageResponse {
