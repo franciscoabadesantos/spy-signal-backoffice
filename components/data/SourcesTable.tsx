@@ -20,7 +20,7 @@ export function SourcesTable({ sources }: Props) {
             <tr>
               <th>Source</th>
               <th>Last seen</th>
-              <th>Expected cadence</th>
+              <th>Cadence</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
@@ -31,8 +31,8 @@ export function SourcesTable({ sources }: Props) {
                 <td>{source.source}</td>
                 <td>{source.lastSeen ?? '—'}</td>
                 <td>{source.expectedCadence ?? '—'}</td>
-                <td><span className={`badge ${badgeClass(source.status)}`}>{source.detail ?? source.status}</span></td>
-                <td><a className="text-link" href={`/data?source=${encodeURIComponent(source.source)}#rebuild`}>Rebuild</a></td>
+                <td><span className={`badge ${badgeClass(source.status)}`}>{source.detail ?? statusLabel(source.status)}</span></td>
+                <td><a className="text-link" href={`/data?source=${encodeURIComponent(source.source)}#rebuild`}>Rebuild →</a></td>
               </tr>
             ))}
             {sources.length === 0 ? (
@@ -52,4 +52,11 @@ function badgeClass(status: SourceStatusRow['status']): string {
   if (status === 'partial') return 'running'
   if (status === 'missing') return 'failed'
   return 'queued'
+}
+
+function statusLabel(status: SourceStatusRow['status']): string {
+  if (status === 'ok') return 'Healthy'
+  if (status === 'partial') return 'Stale'
+  if (status === 'missing') return 'Missing'
+  return 'Unknown'
 }

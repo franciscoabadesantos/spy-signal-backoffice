@@ -15,6 +15,7 @@ export type CalendarDay = {
 type Props = {
   days: CalendarDay[]
   month: string
+  unavailableNote?: string
 }
 
 const STATUS_STYLES: Record<DayStatus, string> = {
@@ -24,7 +25,7 @@ const STATUS_STYLES: Record<DayStatus, string> = {
   weekend: 'calendar-day weekend',
 }
 
-export function DataCalendar({ days, month }: Props) {
+export function DataCalendar({ days, month, unavailableNote }: Props) {
   const [selected, setSelected] = useState<CalendarDay | null>(null)
 
   return (
@@ -55,22 +56,23 @@ export function DataCalendar({ days, month }: Props) {
           </button>
         ))}
       </div>
+      {unavailableNote ? <p className="small" style={{ marginTop: 10 }}>{unavailableNote}</p> : null}
       <div className="calendar-detail">
         {selected ? (
           <div>
             <strong>{formatShortDate(selected.date)}</strong>
             {' - '}
-            {selected.status === 'ok' ? 'Full coverage across available sources.' : null}
+            {selected.status === 'ok' ? 'Full coverage' : null}
             {selected.status === 'partial' ? (
-              <>Partial coverage: {selected.affectedSources?.join(', ') || 'unknown source'}.</>
+              <>Partial — {selected.affectedSources?.join(', ') || 'unknown source'}</>
             ) : null}
             {selected.status === 'missing' ? (
               <>
-                Missing data: {selected.affectedSources?.join(', ') || 'unknown source'}.
+                Missing — {selected.affectedSources?.join(', ') || 'unknown source'}
                 {selected.affectedTickers?.length ? ` Tickers: ${selected.affectedTickers.join(', ')}.` : null}
-                {' '}
+                {' · '}
                 <a className="text-link" href={`/data?source=${encodeURIComponent(selected.affectedSources?.[0] ?? '')}#rebuild`}>
-                  Trigger rebuild
+                  Rebuild →
                 </a>
               </>
             ) : null}

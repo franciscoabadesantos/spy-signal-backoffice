@@ -19,6 +19,9 @@ type HealthResponse = {
   end_date?: string
   rows?: HealthRow[]
   summaries?: Record<string, Record<string, unknown>>
+  gaps?: Array<Record<string, unknown>>
+  gap_ranges?: Array<Record<string, unknown>>
+  sources?: Array<Record<string, unknown>>
 }
 
 type PageProps = {
@@ -48,7 +51,8 @@ export default async function DataPage({ searchParams }: PageProps) {
   const calendarDays = buildCalendarDays(health)
   const sources = buildSourceRows(health)
   const coverage = coveragePercent(health)
-  const staleCount = sources.filter((source) => source.status !== 'ok').length
+  const staleCount = sources.filter((source) => source.status !== 'ok' && source.status !== 'unknown').length
+  const hasDayLevelData = hasUsableDayLevelData(health)
 
   return (
     <div className="page-stack">
@@ -68,7 +72,11 @@ export default async function DataPage({ searchParams }: PageProps) {
       </div>
 
       <div className="card">
-        <DataCalendar days={calendarDays} month={monthLabel(health?.end_date ?? today)} />
+        <DataCalendar
+          days={calendarDays}
+          month={monthLabel(health?.end_date ?? today)}
+          unavailableNote={hasDayLevelData ? undefined : 'Day-level coverage data not available from backend'}
+        />
       </div>
 
       <SourcesTable sources={sources} />
@@ -94,6 +102,8 @@ function buildCalendarDays(health: HealthResponse | null): CalendarDay[] {
   const month = today.getMonth()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const rowsByDate = new Map((health?.rows ?? []).map((row) => [row.date, row]))
+  const gapRanges = readGapRanges(health)
+  const lastSeenRows = buildSourceRows(health).filter((source) => source.lastSeen)
   const days: CalendarDay[] = []
 
   for (let day = 1; day <= daysInMonth; day += 1) {
@@ -102,10 +112,13 @@ function buildCalendarDays(health: HealthResponse | null): CalendarDay[] {
     const row = rowsByDate.get(iso)
     const weekend = date.getDay() === 0 || date.getDay() === 6
     if (!row) {
+      const gapSources = gapRanges.filter((gap) => iso >= gap.startDate && iso <= gap.endDate).map((gap) => gap.source)
+      const afterLastSeenSources = lastSeenRows.filter((source) => source.lastSeen && iso > source.lastSeen).map((source) => source.source)
+      const affectedSources = [...new Set([...gapSources, ...afterLastSeenSources])]
       days.push({
         date: iso,
-        status: weekend ? 'weekend' : 'partial',
-        affectedSources: weekend ? [] : ['unknown'],
+        status: affectedSources.length > 0 ? 'missing' : 'weekend',
+        affectedSources,
       })
       continue
     }
@@ -126,21 +139,30 @@ function buildCalendarDays(health: HealthResponse | null): CalendarDay[] {
 }
 
 function buildSourceRows(health: HealthResponse | null): SourceStatusRow[] {
-  if (!health?.summaries) return []
-  return Object.entries(health.summaries).map(([source, summary]) => {
+  const summaryEntries = Object.entries(health?.summaries ?? {})
+  const sourceEntries = Array.isArray(health?.sources)
+    ? health.sources.map((source) => [String(source.source ?? source.name ?? source.domain ?? 'unknown'), source] as const)
+    : []
+  const entries = summaryEntries.length > 0 ? summaryEntries : sourceEntries
+
+  if (entries.length === 0) return []
+  return entries.map(([source, summary]) => {
     const missingDays = Number(summary.missing_days ?? 0)
-    const lastSeen = findLastSeen(health, source)
+    const staleDays = Number(summary.stale_days ?? summary.lag_days ?? 0)
+    const lastSeen = findLastSeen(health, source) ?? readString(summary, ['last_seen', 'lastSeen', 'latest_available_date', 'latest_date'])
+    const status = missingDays > 0 ? 'missing' : staleDays > 0 ? 'partial' : 'ok'
     return {
       source,
       lastSeen,
-      expectedCadence: 'Daily',
-      status: missingDays > 0 ? 'missing' : 'ok',
-      detail: missingDays > 0 ? `Missing ${missingDays}d` : 'Ok',
+      expectedCadence: readString(summary, ['cadence', 'expected_cadence', 'frequency']) ?? 'Daily',
+      status,
+      detail: status === 'missing' ? 'Missing' : status === 'partial' ? 'Stale' : 'Healthy',
     }
   })
 }
 
-function findLastSeen(health: HealthResponse, source: string): string | null {
+function findLastSeen(health: HealthResponse | null, source: string): string | null {
+  if (!health) return null
   const rows = [...(health.rows ?? [])].reverse()
   const found = rows.find((row) => row.date && normalizeStatus(row.domains?.[source]?.status) === 'ok')
   return found?.date ?? null
@@ -168,6 +190,33 @@ function coveragePercent(health: HealthResponse | null): number | null {
 
 function normalizeStatus(status?: string): string {
   return String(status ?? '').trim().toLowerCase()
+}
+
+function hasUsableDayLevelData(health: HealthResponse | null): boolean {
+  return Boolean(
+    (health?.rows && health.rows.length > 0)
+    || readGapRanges(health).length > 0
+    || buildSourceRows(health).some((source) => source.lastSeen)
+  )
+}
+
+function readGapRanges(health: HealthResponse | null): Array<{ source: string; startDate: string; endDate: string }> {
+  const raw = [...(health?.gaps ?? []), ...(health?.gap_ranges ?? [])]
+  return raw.map((gap) => {
+    const source = readString(gap, ['source', 'domain', 'name']) ?? 'unknown'
+    const startDate = readString(gap, ['start_date', 'startDate', 'from', 'date']) ?? ''
+    const endDate = readString(gap, ['end_date', 'endDate', 'to', 'date']) ?? startDate
+    return { source, startDate, endDate }
+  }).filter((gap) => gap.startDate && gap.endDate)
+}
+
+function readString(record: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) return value
+    if (typeof value === 'number') return String(value)
+  }
+  return null
 }
 
 function shiftIsoDays(days: number): string {
