@@ -109,7 +109,7 @@ export default async function HomePage() {
         <KpiTile
           href="/signals"
           label="Official signal"
-          value={activeSignalId ? truncateId(activeSignalId, 12) : '—'}
+          value={formatOfficialSignalId(activeSignalId)}
           sub={lastFlip ? <OfficialSignalSub direction={officialDirection} timestamp={officialTimestamp} /> : 'unavailable'}
         />
       </div>
@@ -182,9 +182,13 @@ function KpiTile({
 
 function OfficialSignalSub({ direction, timestamp }: { direction: string; timestamp: string }) {
   const label = direction && direction !== '—' ? direction : 'neutral'
+  const neutral = label.trim().toLowerCase() === 'neutral'
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-      <span className={`badge ${directionBadgeClass(label)}`} style={{ fontSize: 10, padding: '2px 6px' }}>
+      <span
+        className={`badge ${directionBadgeClass(label)}`}
+        style={neutral ? { fontSize: 10, padding: '2px 6px', background: '#e5e7eb', color: '#4b5563' } : { fontSize: 10, padding: '2px 6px' }}
+      >
         {label}
       </span>
       <span>{timestamp ? timeAgo(timestamp) : '—'}</span>
@@ -325,25 +329,28 @@ function hasEvidence(row: Record<string, unknown>, keys: string[]): boolean {
 
 async function fetchWithTimeout(options: BackendRequestOptions, label: string): Promise<TimedFetch> {
   let timer: ReturnType<typeof setTimeout> | undefined
+  const startedAt = Date.now()
   try {
     const result = await Promise.race([
       requestBackendJson(options),
       new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), 3000)
+        timer = setTimeout(() => resolve(null), 8000)
       }),
     ])
     if (timer) clearTimeout(timer)
+    const elapsedMs = Date.now() - startedAt
     if (result === null) {
-      console.warn(`[control-room] ${label} timed out after 3000ms`)
+      console.warn(`[control-room] ${label} timed out after ${elapsedMs}ms`)
       return null
     }
+    console.info(`[control-room] ${label} completed in ${elapsedMs}ms`)
     if (label === 'data health') {
       console.info('[control-room] data health raw response', JSON.stringify(result.payload).slice(0, 4000))
     }
     return result
   } catch (error) {
     if (timer) clearTimeout(timer)
-    console.warn(`[control-room] ${label} failed`, error instanceof Error ? error.message : error)
+    console.warn(`[control-room] ${label} failed after ${Date.now() - startedAt}ms`, error instanceof Error ? error.message : error)
     return null
   }
 }
@@ -388,6 +395,12 @@ function directionBadgeClass(direction: string): string {
   if (normalized === 'long' || normalized === 'buy') return 'completed'
   if (normalized === 'short' || normalized === 'sell') return 'failed'
   return 'queued'
+}
+
+function formatOfficialSignalId(id: string): string {
+  if (!id || id === '—') return '—'
+  if (/^\d+$/.test(id)) return `Signal #${truncateId(id, 8)}`
+  return truncateId(id, 12)
 }
 
 function shiftIsoDays(days: number): string {

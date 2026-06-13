@@ -80,6 +80,7 @@ type SignalEvaluationReport = {
 
 type ComparisonRow = {
   id: string
+  displayId: string
   source: SourceFilter
   sourceType: string
   label: string
@@ -341,7 +342,9 @@ function CandidateList({
             >
               <strong style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.ticker}</strong>
               <span style={{ display: 'grid', gap: 4, minWidth: 0 }}>
-                <CopyableId id={row.id} maxLen={12} />
+                <span title={row.id}>
+                  <CopyableId id={row.displayId} maxLen={12} />
+                </span>
                 <span style={{ display: 'flex', gap: 4 }}>
                   {EVIDENCE_ITEMS.map((item) => (
                     <EvidenceDot key={item.key} present={evidence[item.key]} label={item.label} />
@@ -465,15 +468,21 @@ function MetricsRow({ report, selectedRow }: { report: SignalEvaluationReport | 
     ['Ann. return', metricText(metrics, ['annual_return', 'ann_return', 'cagr'])],
     ['Turnover', metricText(metrics, ['turnover'])],
   ]
+  const metricsUnavailable = Boolean(report) && items.every(([, value]) => value === '—')
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginTop: 12 }}>
-      {items.map(([label, value]) => (
-        <div key={label} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, background: '#f8fafc' }}>
-          <label>{label}</label>
-          <div style={{ fontFamily: 'IBM Plex Mono, SFMono-Regular, Consolas, monospace', fontSize: 14 }}>{value}</div>
-        </div>
-      ))}
-    </div>
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginTop: 12 }}>
+        {items.map(([label, value]) => (
+          <div key={label} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, background: '#f8fafc' }}>
+            <label>{label}</label>
+            <div style={{ fontFamily: 'IBM Plex Mono, SFMono-Regular, Consolas, monospace', fontSize: 14 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+      {metricsUnavailable ? (
+        <p className="small" style={{ marginTop: 8, color: '#64748b' }}>Metrics not yet available for this candidate</p>
+      ) : null}
+    </>
   )
 }
 
@@ -669,6 +678,7 @@ function candidateToRow(candidate: SignalEvaluationCandidateSummary): Comparison
   const ticker = primaryTicker(candidate)
   return {
     id: candidate.candidate_id,
+    displayId: candidateDisplayId(candidate),
     source,
     sourceType: candidate.source_type,
     label: candidate.display_name ?? candidate.candidate_id,
@@ -689,9 +699,35 @@ function filterRows(rows: ComparisonRow[], search: string): ComparisonRow[] {
   if (!query) return rows
   return rows.filter((row) => (
     row.id.toLowerCase().includes(query)
+    || row.displayId.toLowerCase().includes(query)
     || row.ticker.toLowerCase().includes(query)
     || row.tickerUniverse.toLowerCase().includes(query)
   ))
+}
+
+function candidateDisplayId(candidate: SignalEvaluationCandidateSummary): string {
+  const record = candidate as SignalEvaluationCandidateSummary & Record<string, unknown>
+  const preferred = [
+    record.short_id,
+    record.shortId,
+    record.candidate_short_id,
+    record.candidateShortId,
+    record.name,
+    record.candidate_name,
+    candidate.display_name,
+  ].find((value) => typeof value === 'string' && value.trim())
+
+  if (typeof preferred === 'string' && preferred.trim()) return preferred.trim()
+
+  const raw = candidate.candidate_id
+  const segments = raw.split(/[:/|#]+/).map((segment) => segment.trim()).filter(Boolean)
+  const last = segments.at(-1)
+  if (last && last !== raw) return last
+
+  const experimentMatch = raw.match(/(?:experiment|exp)[_-]?([a-z0-9]+)$/i)
+  if (experimentMatch?.[1]) return `exp-${experimentMatch[1]}`
+
+  return raw
 }
 
 function evidenceFromCandidate(candidate: SignalEvaluationCandidateSummary): Record<EvidenceKey, boolean> {
