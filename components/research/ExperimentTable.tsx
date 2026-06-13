@@ -153,34 +153,35 @@ function ExpandedExperimentDetail({
   if (loading) return <p className="small">Loading events and artifacts...</p>
 
   return (
-    <div className="research-inline-detail">
+    <div className="research-inline-detail" style={{ display: 'grid', gap: 16 }}>
       <div>
-        <h4>Event log</h4>
+        <h4 style={{ marginBottom: 8 }}>Event log</h4>
         {events.length ? (
-          <div className="list-stack">
+          <div style={compactScrollStyle}>
             {events.map((event, index) => (
-              <div className="list-row" key={event.event_id ?? `${event.created_at}-${index}`}>
-                <div>
+              <div style={compactLineStyle} key={event.event_id ?? `${event.created_at}-${index}`}>
+                <span aria-hidden="true" style={eventDotStyle(event)} />
+                <div style={compactTextStyle}>
                   <strong>{renderText(event.event_type ?? event.step)}</strong>
-                  <div className="small">{renderText(event.message)}</div>
+                  <span style={mutedTruncateStyle}>{renderText(event.message)}</span>
                 </div>
-                <div className="small">{formatDate(event.created_at ?? '')}</div>
+                <div className="small" style={compactDateStyle}>{formatDate(event.created_at ?? '')}</div>
               </div>
             ))}
           </div>
         ) : <p className="small">No events returned.</p>}
       </div>
       <div>
-        <h4>Artifacts</h4>
+        <h4 style={{ marginBottom: 8 }}>Artifacts</h4>
         {artifacts.length ? (
-          <div className="list-stack">
+          <div style={{ display: 'grid', gap: 0 }}>
             {artifacts.map((artifact, index) => (
-              <div className="list-row" key={artifact.artifact_id ?? `${artifact.artifact_ref}-${index}`}>
-                <div>
-                  <strong>{renderText(artifact.artifact_type)}</strong>
-                  <div className="small">{renderText(artifact.artifact_ref ?? artifact.artifact_hash)}</div>
+              <div style={compactLineStyle} key={artifact.artifact_id ?? `${artifact.artifact_ref}-${index}`}>
+                <div style={compactTextStyle}>
+                  <strong>{artifactName(artifact)}</strong>
+                  <span style={mutedTruncateStyle}>{renderText(artifact.artifact_ref ?? artifact.artifact_hash)}</span>
                 </div>
-                <div className="small">{formatDate(artifact.created_at ?? '')}</div>
+                <div className="small" style={compactDateStyle}>{formatDate(artifact.created_at ?? '')}</div>
               </div>
             ))}
           </div>
@@ -188,6 +189,73 @@ function ExpandedExperimentDetail({
       </div>
     </div>
   )
+}
+
+const compactScrollStyle: CSSProperties = {
+  display: 'grid',
+  gap: 0,
+  maxHeight: 200,
+  overflowY: 'scroll',
+}
+
+const compactLineStyle: CSSProperties = {
+  alignItems: 'center',
+  borderBottom: '1px solid #e2e8f0',
+  display: 'flex',
+  gap: 8,
+  minHeight: 32,
+  padding: '5px 0',
+}
+
+const compactTextStyle: CSSProperties = {
+  alignItems: 'baseline',
+  display: 'flex',
+  flex: '1 1 auto',
+  gap: 8,
+  minWidth: 0,
+  overflow: 'hidden',
+}
+
+const mutedTruncateStyle: CSSProperties = {
+  color: '#64748b',
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+}
+
+const compactDateStyle: CSSProperties = {
+  marginLeft: 'auto',
+  minWidth: 150,
+  textAlign: 'right',
+  whiteSpace: 'nowrap',
+}
+
+function eventDotStyle(event: ResearchEvent): CSSProperties {
+  return {
+    background: eventDotColor(event),
+    borderRadius: 999,
+    flex: '0 0 auto',
+    height: 8,
+    width: 8,
+  }
+}
+
+function eventDotColor(event: ResearchEvent): string {
+  const name = String(event.event_type ?? event.step ?? '').trim().toLowerCase()
+  const status = String(event.status ?? '').trim().toLowerCase()
+  const text = `${name} ${status} ${String(event.message ?? '').toLowerCase()}`
+  if (name.endsWith('_completed') || name.endsWith('_done') || ['completed', 'done', 'succeeded', 'success'].includes(status)) return '#16a34a'
+  if (text.includes('failed') || text.includes('error')) return '#dc2626'
+  if (name.endsWith('_started') || name.endsWith('_enqueued') || ['started', 'enqueued', 'queued', 'submitted', 'running'].includes(status)) return '#2563eb'
+  return '#94a3b8'
+}
+
+function artifactName(artifact: ResearchArtifact): string {
+  const ref = artifact.artifact_ref ?? artifact.artifact_hash ?? artifact.artifact_type
+  if (!ref) return 'Artifact'
+  const text = String(ref)
+  return text.split('/').filter(Boolean).at(-1) ?? text
 }
 
 function StatusBadge({ status }: { status?: string | null }) {
@@ -210,19 +278,7 @@ function tickerText(experiment: ResearchExperiment): string {
 }
 
 export function readCandidateId(experiment: ResearchExperiment): string | null {
-  const roots = [
-    experiment,
-    asRecord(experiment.result_json),
-    asRecord(experiment.result),
-    asRecord(asRecord(experiment.result_json)?.output),
-    asRecord(asRecord(experiment.result)?.output),
-  ].filter((value): value is Record<string, unknown> => Boolean(value))
-
-  for (const root of roots) {
-    const value = root.candidate_id ?? root.candidateId
-    if (typeof value === 'string' && value.trim()) return value
-  }
-  return null
+  return findCandidateId(experiment, 0, new Set())
 }
 
 export function experimentAnchorId(experimentId: string): string {
@@ -238,4 +294,33 @@ function renderText(value: unknown): string {
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   return value as Record<string, unknown>
+}
+
+function findCandidateId(value: unknown, depth: number, seen: Set<unknown>): string | null {
+  if (depth > 5 || !value || typeof value !== 'object' || seen.has(value)) return null
+  seen.add(value)
+
+  const record = asRecord(value)
+  if (!record) return null
+  for (const key of ['candidate_id', 'candidateId', 'output_candidate', 'outputCandidate', 'registered_candidate', 'registeredCandidate', 'promoted_candidate', 'candidate']) {
+    const candidate = readCandidateValue(record[key])
+    if (candidate) return candidate
+  }
+
+  for (const nested of Object.values(record)) {
+    const candidate = findCandidateId(nested, depth + 1, seen)
+    if (candidate) return candidate
+  }
+  return null
+}
+
+function readCandidateValue(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value
+  const record = asRecord(value)
+  if (!record) return null
+  for (const key of ['candidate_id', 'candidateId', 'id', 'candidate_ref', 'candidateRef']) {
+    const candidate = record[key]
+    if (typeof candidate === 'string' && candidate.trim()) return candidate
+  }
+  return null
 }

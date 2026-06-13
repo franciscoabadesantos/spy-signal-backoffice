@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useEffectEvent, useMemo, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
-import { ExperimentTable, type ResearchArtifact, type ResearchEvent, type ResearchExperiment } from '@/components/research/ExperimentTable'
+import { ExperimentTable, readCandidateId, type ResearchArtifact, type ResearchEvent, type ResearchExperiment } from '@/components/research/ExperimentTable'
 import { NewExperimentForm } from '@/components/research/NewExperimentForm'
 
 type Pagination = {
@@ -23,6 +23,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   const [error, setError] = useState<string | null>(null)
   const [pagination, setPagination] = useState<Pagination | null>(null)
   const [offset, setOffset] = useState(0)
+  const loggedCompletedDetailRef = useRef(false)
 
   const sortedExperiments = useMemo(
     () => [...experiments].sort((a, b) => toTimestamp(b.started_at ?? b.created_at) - toTimestamp(a.started_at ?? a.created_at)),
@@ -35,7 +36,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     try {
       const query = new URLSearchParams({ limit: '80', offset: String(newOffset) })
       const payload = await requestClientJson(`/api/research/experiments?${query.toString()}`)
-      const list = normalizeExperiments(payload)
+      const list = await hydrateCompletedCandidateDetails(normalizeExperiments(payload), loggedCompletedDetailRef)
       setExperiments(list)
       const page = asRecord(asRecord(payload)?.pagination)
       setPagination(page as Pagination | null)
@@ -140,10 +141,56 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   )
 }
 
+async function hydrateCompletedCandidateDetails(
+  experiments: ResearchExperiment[],
+  loggedCompletedDetailRef: { current: boolean }
+): Promise<ResearchExperiment[]> {
+  const completed = experiments.filter((experiment) => isCompleted(experiment.status))
+  const needsDetail = completed.filter((experiment) => !readCandidateId(experiment))
+  const logOnlyExperiment = !loggedCompletedDetailRef.current && completed[0] && !needsDetail.includes(completed[0])
+    ? [completed[0]]
+    : []
+  const detailTargets = [...needsDetail, ...logOnlyExperiment]
+  if (detailTargets.length === 0) return experiments
+
+  const detailResults = await Promise.allSettled(
+    detailTargets.map(async (experiment) => {
+      const payload = await requestClientJson(`/api/research/experiments/${encodeURIComponent(experiment.experiment_id)}`)
+      if (!loggedCompletedDetailRef.current) {
+        console.info('[research] completed experiment detail response', payload)
+        loggedCompletedDetailRef.current = true
+      }
+      return normalizeExperimentDetail(payload, experiment)
+    })
+  )
+  const detailById = new Map<string, ResearchExperiment>()
+  for (const result of detailResults) {
+    if (result.status === 'fulfilled' && result.value) {
+      detailById.set(result.value.experiment_id, result.value)
+    }
+  }
+  return experiments.map((experiment) => {
+    const detail = detailById.get(experiment.experiment_id)
+    return detail ? { ...experiment, ...detail } : experiment
+  })
+}
+
 function normalizeExperiments(payload: unknown): ResearchExperiment[] {
   return readListPayload<ResearchExperiment>(payload, ['jobs', 'experiments', 'items', 'results']).filter(
     (item) => typeof item?.experiment_id === 'string'
   )
+}
+
+function normalizeExperimentDetail(payload: unknown, fallback: ResearchExperiment): ResearchExperiment | null {
+  const record = asRecord(payload)
+  const nested = asRecord(record?.experiment)
+  if (typeof nested?.experiment_id === 'string') {
+    return { ...nested, experiment_id: nested.experiment_id, detail_response: payload }
+  }
+  if (typeof record?.experiment_id === 'string') {
+    return { ...record, experiment_id: record.experiment_id, detail_response: payload }
+  }
+  return { ...fallback, detail_response: payload }
 }
 
 function normalizeEvents(payload: unknown): ResearchEvent[] {
@@ -173,4 +220,8 @@ function toTimestamp(value?: string | null): number {
   if (!value) return 0
   const parsed = new Date(value).getTime()
   return Number.isNaN(parsed) ? 0 : parsed
+}
+
+function isCompleted(status?: string | null): boolean {
+  return ['done', 'completed', 'succeeded', 'success'].includes(String(status ?? '').trim().toLowerCase())
 }

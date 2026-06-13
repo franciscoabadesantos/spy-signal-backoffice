@@ -32,7 +32,7 @@ export default async function DataPage({ searchParams }: PageProps) {
   const admin = await requireAdminUser()
   const resolvedSearchParams = await searchParams
   const today = new Date().toISOString().slice(0, 10)
-  const start = shiftIsoDays(-30)
+  const start = monthStartIso()
   const [healthResult] = await Promise.allSettled([
     requestBackendJson({
       path: '/analyst/data-ops/health',
@@ -74,14 +74,19 @@ export default async function DataPage({ searchParams }: PageProps) {
       <div className="card">
         <DataCalendar
           days={calendarDays}
-          month={monthLabel(health?.end_date ?? today)}
+          month={monthLabel(today)}
           unavailableNote={hasDayLevelData ? undefined : 'Day-level coverage data not available from backend'}
         />
       </div>
 
       <SourcesTable sources={sources} />
 
-      <DataOpsConsole adminEmail={admin.email} initialDomain={resolvedSearchParams?.source} />
+      <details className="card" open={Boolean(resolvedSearchParams?.source)}>
+        <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Advanced repair console</summary>
+        <div style={{ marginTop: 16 }}>
+          <DataOpsConsole adminEmail={admin.email} initialDomain={resolvedSearchParams?.source} />
+        </div>
+      </details>
     </div>
   )
 }
@@ -98,6 +103,7 @@ function KpiCard({ label, value, unit, sub }: { label: string; value: string; un
 
 function buildCalendarDays(health: HealthResponse | null): CalendarDay[] {
   const today = new Date()
+  const todayIso = today.toISOString().slice(0, 10)
   const year = today.getFullYear()
   const month = today.getMonth()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
@@ -113,7 +119,7 @@ function buildCalendarDays(health: HealthResponse | null): CalendarDay[] {
     const weekend = date.getDay() === 0 || date.getDay() === 6
     if (!row) {
       const gapSources = gapRanges.filter((gap) => iso >= gap.startDate && iso <= gap.endDate).map((gap) => gap.source)
-      const afterLastSeenSources = lastSeenRows.filter((source) => source.lastSeen && iso > source.lastSeen).map((source) => source.source)
+      const afterLastSeenSources = lastSeenRows.filter((source) => source.lastSeen && iso <= todayIso && iso > source.lastSeen).map((source) => source.source)
       const affectedSources = [...new Set([...gapSources, ...afterLastSeenSources])]
       days.push({
         date: iso,
@@ -219,9 +225,9 @@ function readString(record: Record<string, unknown>, keys: string[]): string | n
   return null
 }
 
-function shiftIsoDays(days: number): string {
+function monthStartIso(): string {
   const date = new Date()
-  date.setDate(date.getDate() + days)
+  date.setDate(1)
   return date.toISOString().slice(0, 10)
 }
 

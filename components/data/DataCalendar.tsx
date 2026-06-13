@@ -27,9 +27,11 @@ const STATUS_STYLES: Record<DayStatus, string> = {
 
 export function DataCalendar({ days, month, unavailableNote }: Props) {
   const [selected, setSelected] = useState<CalendarDay | null>(null)
+  const firstDate = days[0]?.date
+  const leadingBlanks = firstDate ? (new Date(`${firstDate}T00:00:00`).getDay() + 6) % 7 : 0
 
   return (
-    <div>
+    <div style={{ minHeight: 280 }}>
       <div className="calendar-header">
         <span className="calendar-title">{month}</span>
         <div className="calendar-legend">
@@ -43,13 +45,17 @@ export function DataCalendar({ days, month, unavailableNote }: Props) {
           <div key={day}>{day}</div>
         ))}
       </div>
-      <div className="calendar-grid">
+      <div className="calendar-grid" style={{ gridAutoRows: 'minmax(40px, 1fr)' }}>
+        {Array.from({ length: leadingBlanks }).map((_, index) => (
+          <div aria-hidden="true" key={`blank-${index}`} style={{ minHeight: 40 }} />
+        ))}
         {days.map((day, index) => (
           <button
             className={STATUS_STYLES[day.status]}
             disabled={day.status === 'weekend'}
             key={`${day.date}-${index}`}
             onClick={() => setSelected(day)}
+            style={{ minHeight: 40 }}
             type="button"
           >
             {new Date(`${day.date}T00:00:00`).getDate()}
