@@ -25,21 +25,21 @@ type HealthResponse = {
 }
 
 type PageProps = {
-  searchParams?: Promise<{ source?: string }>
+  searchParams?: Promise<{ source?: string; start_date?: string; end_date?: string }>
 }
 
 export default async function DataPage({ searchParams }: PageProps) {
   const admin = await requireAdminUser()
   const resolvedSearchParams = await searchParams
   const today = new Date().toISOString().slice(0, 10)
-  const start = monthStartIso()
+  const range = resolveDateRange(resolvedSearchParams, today)
   const [healthResult] = await Promise.allSettled([
     requestBackendJson({
       path: '/analyst/data-ops/health',
       searchParams: new URLSearchParams({
         domains: 'market,macro,release-calendar',
-        start_date: start,
-        end_date: today,
+        start_date: range.startDate,
+        end_date: range.endDate,
       }),
       requireBackendServiceToken: true,
       includeCloudflareAccess: true,
@@ -51,11 +51,12 @@ export default async function DataPage({ searchParams }: PageProps) {
   if (health) {
     console.info('[data] data-ops health raw response', JSON.stringify(health).slice(0, 4000))
   }
-  const calendarDays = buildCalendarDays(health)
+  const calendarDays = buildCalendarDays(health, range.startDate, range.endDate)
   const sources = buildSourceRows(health)
   const coverage = coveragePercent(health)
   const staleCount = sources.filter((source) => source.status !== 'ok' && source.status !== 'unknown').length
   const hasDayLevelData = hasUsableDayLevelData(health)
+  const windowLabel = dateWindowLabel(health?.start_date ?? range.startDate, health?.end_date ?? range.endDate)
 
   return (
     <div className="page-stack">
@@ -69,14 +70,35 @@ export default async function DataPage({ searchParams }: PageProps) {
       </div>
 
       <div className="metric-grid">
-        <KpiCard label="Coverage this month" value={coverage === null ? '—' : String(coverage)} unit={coverage === null ? undefined : '%'} sub={health ? 'Computed from returned day/domain statuses' : 'unavailable'} />
+        <KpiCard label="Coverage window" value={coverage === null ? '—' : String(coverage)} unit={coverage === null ? undefined : '%'} sub={health ? windowLabel : 'unavailable'} />
         <KpiCard label="Sources with gaps" value={health ? String(staleCount) : '—'} sub={health ? 'Missing or partial status' : 'unavailable'} />
+        <KpiCard label="Days loaded" value={String(calendarDays.length)} sub={windowLabel} />
+      </div>
+
+      <div className="card data-range-card">
+        <form className="data-range-form" action="/data">
+          {resolvedSearchParams?.source ? <input type="hidden" name="source" value={resolvedSearchParams.source} /> : null}
+          <div>
+            <label htmlFor="start_date">Start date</label>
+            <input id="start_date" name="start_date" type="date" defaultValue={range.startDate} />
+          </div>
+          <div>
+            <label htmlFor="end_date">End date</label>
+            <input id="end_date" name="end_date" type="date" defaultValue={range.endDate} />
+          </div>
+          <div className="data-range-actions">
+            <button className="primary" type="submit">Apply range</button>
+            <a className="secondary-button" href={`/data?start_date=${shiftIsoDays(today, -29)}&end_date=${today}`}>30 days</a>
+            <a className="secondary-button" href={`/data?start_date=${shiftIsoDays(today, -89)}&end_date=${today}`}>90 days</a>
+            <a className="secondary-button" href={`/data?start_date=${shiftIsoDays(today, -364)}&end_date=${today}`}>1 year</a>
+          </div>
+        </form>
       </div>
 
       <div className="card">
         <DataCalendar
           days={calendarDays}
-          month={monthLabel(today)}
+          title={windowLabel}
           unavailableNote={hasDayLevelData ? undefined : 'Day-level coverage data not available from backend'}
         />
       </div>
@@ -103,19 +125,14 @@ function KpiCard({ label, value, unit, sub }: { label: string; value: string; un
   )
 }
 
-function buildCalendarDays(health: HealthResponse | null): CalendarDay[] {
-  const today = new Date()
-  const todayIso = today.toISOString().slice(0, 10)
-  const year = today.getFullYear()
-  const month = today.getMonth()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
+function buildCalendarDays(health: HealthResponse | null, startDate: string, endDate: string): CalendarDay[] {
+  const todayIso = new Date().toISOString().slice(0, 10)
   const rowsByDate = new Map((health?.rows ?? []).map((row) => [row.date, row]))
   const gapRanges = readGapRanges(health)
   const lastSeenRows = buildSourceRows(health).filter((source) => source.lastSeen)
   const days: CalendarDay[] = []
 
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    const date = new Date(year, month, day)
+  for (const date of eachDate(startDate, endDate)) {
     const iso = date.toISOString().slice(0, 10)
     const row = rowsByDate.get(iso)
     const weekend = date.getDay() === 0 || date.getDay() === 6
@@ -227,12 +244,44 @@ function readString(record: Record<string, unknown>, keys: string[]): string | n
   return null
 }
 
-function monthStartIso(): string {
-  const date = new Date()
-  date.setDate(1)
+function resolveDateRange(searchParams: Awaited<PageProps['searchParams']>, today: string): { startDate: string; endDate: string } {
+  const endDate = validIsoDate(searchParams?.end_date) ?? today
+  const startDate = validIsoDate(searchParams?.start_date) ?? shiftIsoDays(endDate, -89)
+  if (startDate > endDate) {
+    return { startDate: shiftIsoDays(today, -89), endDate: today }
+  }
+  return { startDate, endDate }
+}
+
+function validIsoDate(value?: string): string | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const date = new Date(`${value}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? null : value
+}
+
+function shiftIsoDays(dateIso: string, days: number): string {
+  const date = new Date(`${dateIso}T00:00:00`)
+  date.setDate(date.getDate() + days)
   return date.toISOString().slice(0, 10)
 }
 
-function monthLabel(date: string): string {
-  return new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+function eachDate(startDate: string, endDate: string): Date[] {
+  const dates: Date[] = []
+  const cursor = new Date(`${startDate}T00:00:00`)
+  const end = new Date(`${endDate}T00:00:00`)
+  while (cursor <= end) {
+    dates.push(new Date(cursor))
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return dates
+}
+
+function dateWindowLabel(startDate: string, endDate: string): string {
+  const start = formatShortDate(startDate)
+  const end = formatShortDate(endDate)
+  return start === end ? start : `${start} to ${end}`
+}
+
+function formatShortDate(date: string): string {
+  return new Date(`${date}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }

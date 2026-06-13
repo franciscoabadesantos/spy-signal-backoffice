@@ -32,7 +32,7 @@ export function SourcesTable({ sources }: Props) {
                 <td>{source.lastSeen ?? '—'}</td>
                 <td>{source.expectedCadence ?? '—'}</td>
                 <td><span className={`badge ${badgeClass(source.status)}`}>{source.detail ?? statusLabel(source.status)}</span></td>
-                <td><a className="text-link" href={`/data?source=${encodeURIComponent(source.source)}#rebuild`}>Rebuild →</a></td>
+                <td><a className="text-link" href={`/data?source=${encodeURIComponent(source.source)}#rebuild`}>Rebuild</a></td>
               </tr>
             ))}
             {sources.length === 0 ? (

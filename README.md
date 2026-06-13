@@ -75,6 +75,23 @@ npm install
 npm run dev
 ```
 
+### Local Clerk bypass
+
+For local debugging with automation tools, Clerk can be bypassed by starting the dev server with:
+
+```bash
+ADMIN_AUTH_BYPASS=true npm run dev
+```
+
+This bypass is intentionally local-only. The code checks both conditions before skipping Clerk:
+
+- `ADMIN_AUTH_BYPASS=true`
+- `NODE_ENV !== 'production'`
+
+That means a normal Vercel production deployment still requires Clerk even if `ADMIN_AUTH_BYPASS` is accidentally present in the environment. Do not add `ADMIN_AUTH_BYPASS` to Vercel production environment variables.
+
+For agent/browser troubleshooting, see `AGENTS.md`. It documents the `ADMIN_AUTH_BYPASS=true npm run dev` flow, `agent-browser` install notes, screenshot/snapshot commands, error-overlay checks, and backend connectivity checks.
+
 ## Deployment
 
 Deploy as a separate Vercel project/subdomain (example: `admin.yourdomain.com`) so admin tooling is isolated from the public app.
@@ -96,3 +113,5 @@ Recommended Vercel production environment variables:
 - `BACKEND_SERVICE_TOKEN`
 - `CF_ACCESS_CLIENT_ID`
 - `CF_ACCESS_CLIENT_SECRET`
+
+Do not set `ADMIN_AUTH_BYPASS` in production. It is only for local `next dev`, and the app ignores it when `NODE_ENV=production`.

@@ -15,7 +15,19 @@ function parseAllowlist(): Set<string> {
   )
 }
 
+export function isAdminAuthBypassEnabled(): boolean {
+  // Local automation/debugging only. Production must always go through Clerk.
+  return process.env.NODE_ENV !== 'production' && process.env.ADMIN_AUTH_BYPASS === 'true'
+}
+
 export async function requireAdminUser(): Promise<AdminContext> {
+  if (isAdminAuthBypassEnabled()) {
+    return {
+      userId: 'local-admin-bypass',
+      email: readBypassEmail(),
+    }
+  }
+
   const { userId } = await auth()
   if (!userId) {
     throw new Error('UNAUTHORIZED')
@@ -27,7 +39,7 @@ export async function requireAdminUser(): Promise<AdminContext> {
   }
 
   const user = await currentUser()
-  const email = user?.emailAddresses?.[0]?.emailAddress?.toLowerCase().trim()
+  const email = readPrimaryEmail(user)
   if (!email) {
     throw new Error('EMAIL_MISSING')
   }
@@ -40,6 +52,15 @@ export async function requireAdminUser(): Promise<AdminContext> {
     userId,
     email,
   }
+}
+
+function readBypassEmail(): string {
+  return [...parseAllowlist()][0] ?? 'local-admin@example.com'
+}
+
+function readPrimaryEmail(user: Awaited<ReturnType<typeof currentUser>>): string | null {
+  const primaryEmail = user?.emailAddresses?.find((email) => email.id === user.primaryEmailAddressId)
+  return (primaryEmail ?? user?.emailAddresses?.[0])?.emailAddress?.toLowerCase().trim() ?? null
 }
 
 export function mapAuthErrorStatus(error: unknown): { status: number; message: string } {

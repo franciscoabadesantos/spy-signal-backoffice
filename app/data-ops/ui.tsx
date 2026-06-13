@@ -231,7 +231,7 @@ export default function DataOpsConsole({ adminEmail, initialDomain }: { adminEma
   const [sourceComparison, setSourceComparison] = useState<SourceComparisonResponse | null>(null)
   const [macroGaps, setMacroGaps] = useState<MacroReleaseGapsResponse | null>(null)
   const [loadingHealth, setLoadingHealth] = useState(false)
-  const [healthStartDate, setHealthStartDate] = useState(shiftIsoDays(-30))
+  const [healthStartDate, setHealthStartDate] = useState(shiftIsoDays(-90))
   const [healthEndDate, setHealthEndDate] = useState(toTodayIso())
   const [healthTicker, setHealthTicker] = useState('')
   const [healthDomains, setHealthDomains] = useState<DataOpsDomain[]>(['market', 'macro', 'release-calendar'])
@@ -552,12 +552,13 @@ export default function DataOpsConsole({ adminEmail, initialDomain }: { adminEma
         <div className="card compact-card">
           <h3>Missing data</h3>
           {gapIssues.length === 0 ? <p className="small">No missing ranges detected in the current coverage window.</p> : null}
-          <div className="list-stack">
-            {gapIssues.slice(0, 10).map((issue) => (
+          {gapIssues.length > 0 ? <p className="small">{gapIssues.length} gap range(s) in the loaded window.</p> : null}
+          <div className="list-stack diagnostic-scroll">
+            {gapIssues.map((issue) => (
               <div className="list-row" key={`${issue.domain}-${issue.startDate}-${issue.endDate}`}>
                 <div>
                   <strong>{issue.domain}</strong>
-                  <div className="small">{issue.startDate} → {issue.endDate}</div>
+                  <div className="small">{issue.startDate} to {issue.endDate}</div>
                 </div>
                 <div>
                   <div>{issue.missingDays} missing business day(s)</div>
@@ -582,8 +583,8 @@ export default function DataOpsConsole({ adminEmail, initialDomain }: { adminEma
                 <p className="small">Unsupported: {duplicates.unsupported.join(', ')}</p>
               )}
               {duplicates.groups && duplicates.groups.length > 0 ? (
-                <div className="list-stack">
-                  {duplicates.groups.slice(0, 5).map((group, idx) => (
+                <div className="list-stack diagnostic-scroll">
+                  {duplicates.groups.map((group, idx) => (
                     <div className="list-row" key={idx}>
                       <div>
                         <strong>{group.table || group.domain}</strong>
@@ -619,8 +620,8 @@ export default function DataOpsConsole({ adminEmail, initialDomain }: { adminEma
                 <p className="small">Unsupported: {freshness.unsupported.join(', ')}</p>
               )}
               {freshness.items && freshness.items.length > 0 ? (
-                <div className="list-stack">
-                  {freshness.items.slice(0, 5).map((item, idx) => (
+                <div className="list-stack diagnostic-scroll">
+                  {freshness.items.map((item, idx) => (
                     <div className="list-row" key={idx}>
                       <div>
                         <strong>{item.identifier || item.domain}</strong>
@@ -657,8 +658,8 @@ export default function DataOpsConsole({ adminEmail, initialDomain }: { adminEma
                 <p className="small">Unsupported: {sourceComparison.unsupported.join(', ')}</p>
               )}
               {sourceComparison.comparisons && sourceComparison.comparisons.length > 0 ? (
-                <div className="list-stack">
-                  {sourceComparison.comparisons.slice(0, 5).map((item, idx) => (
+                <div className="list-stack diagnostic-scroll">
+                  {sourceComparison.comparisons.map((item, idx) => (
                     <div className="list-row" key={idx}>
                       <div>
                         <strong>Left: {item.left}</strong>
@@ -690,8 +691,8 @@ export default function DataOpsConsole({ adminEmail, initialDomain }: { adminEma
                 <p className="small">Unsupported: {macroGaps.unsupported.join(', ')}</p>
               )}
               {macroGaps.items && macroGaps.items.length > 0 ? (
-                <div className="list-stack">
-                  {macroGaps.items.slice(0, 5).map((item, idx) => (
+                <div className="list-stack diagnostic-scroll">
+                  {macroGaps.items.map((item, idx) => (
                     <div className="list-row" key={idx}>
                       <div>
                         <strong>{item.series_key}</strong>

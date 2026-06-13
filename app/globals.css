@@ -453,6 +453,22 @@ button.secondary {
   background: #fff;
 }
 
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
 button.danger {
   background: #991b1b;
   color: #fff;
@@ -534,6 +550,7 @@ button:disabled {
   overflow: auto;
   border: 1px solid #dbe3f0;
   border-radius: 10px;
+  max-height: 560px;
 }
 
 .health-table {
@@ -548,6 +565,25 @@ button:disabled {
   border-bottom: 1px solid #e2e8f0;
   text-align: left;
   white-space: nowrap;
+}
+
+.health-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+}
+
+.health-table th:first-child,
+.health-table td:first-child {
+  position: sticky;
+  left: 0;
+  background: #fff;
+}
+
+.health-table th:first-child {
+  z-index: 2;
+  background: #f8fafc;
 }
 
 .cell-ok {
@@ -1119,6 +1155,10 @@ details summary {
   margin-bottom: 12px;
 }
 
+.calendar-panel {
+  min-height: 280px;
+}
+
 .calendar-title {
   font-size: 14px;
   font-weight: 700;
@@ -1172,6 +1212,28 @@ details summary {
   gap: 4px;
 }
 
+.calendar-months {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  max-height: 640px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.calendar-month {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.calendar-month h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
 .calendar-weekdays {
   margin-bottom: 4px;
   color: #94a3b8;
@@ -1181,11 +1243,15 @@ details summary {
 }
 
 .calendar-day {
-  min-height: 34px;
+  min-height: 40px;
   padding: 0;
   border-radius: 4px;
   font-size: 10px;
   font-weight: 700;
+}
+
+.calendar-blank {
+  min-height: 40px;
 }
 
 .calendar-day.ok {
@@ -1280,6 +1346,29 @@ details summary {
   gap: 12px;
 }
 
+.data-range-card {
+  margin-top: -4px;
+}
+
+.data-range-form {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) minmax(360px, 1.5fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.data-range-actions {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.3fr) repeat(3, minmax(84px, 1fr));
+  gap: 8px;
+}
+
+.diagnostic-scroll {
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     display: block;
@@ -1314,9 +1403,12 @@ details summary {
   }
 
   .metric-grid,
+  .data-range-form,
+  .data-range-actions,
   .control-kpi-grid,
   .control-room-grid,
   .feature-grid,
+  .calendar-months,
   .operations-grid,
   .planned-grid,
   .evaluation-layout,
