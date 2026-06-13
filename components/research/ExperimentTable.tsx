@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Fragment, type CSSProperties } from 'react'
+import { Fragment, useState, type CSSProperties } from 'react'
 import { CopyableId } from '@/components/ui/CopyableId'
 import { formatDate } from '@/lib/format'
 
@@ -113,7 +113,7 @@ export function ExperimentTable({
                         <Link className="text-link" href={`/signals?candidate=${encodeURIComponent(candidateId)}`}>
                           View in Signals →
                         </Link>
-                      ) : '—'}
+                      ) : <span title="No candidate output found in experiment detail">—</span>}
                     </td>
                     <td>{formatDate(experiment.started_at ?? experiment.created_at ?? '')}</td>
                   </tr>
@@ -123,7 +123,6 @@ export function ExperimentTable({
                         <ExpandedExperimentDetail
                           artifacts={artifacts}
                           events={events}
-                          failed={isFailedStatus(experiment.status)}
                           loading={loadingDetail}
                         />
                       </td>
@@ -147,36 +146,25 @@ export function ExperimentTable({
 function ExpandedExperimentDetail({
   artifacts,
   events,
-  failed,
   loading,
 }: {
   artifacts: ResearchArtifact[]
   events: ResearchEvent[]
-  failed: boolean
   loading: boolean
 }) {
   if (loading) return <p className="small">Loading events and artifacts...</p>
-  const highlightedEventIndex = failed ? highlightedFailureEventIndex(events) : -1
 
   return (
     <div className="research-inline-detail" style={{ display: 'grid', gap: 16 }}>
       <div>
         <h4 style={{ marginBottom: 8 }}>Event log</h4>
         {events.length ? (
-          <div style={compactScrollStyle}>
-            {events.map((event, index) => {
-              const highlighted = index === highlightedEventIndex
-              return (
-                <div style={highlighted ? highlightedLineStyle : compactLineStyle} key={event.event_id ?? `${event.created_at}-${index}`}>
-                  <span aria-hidden="true" style={eventDotStyle(event)} />
-                  <div style={compactTextStyle}>
-                    <strong>{renderText(event.event_type ?? event.step)}</strong>
-                    <span style={highlighted ? errorDescriptionStyle : mutedTruncateStyle}>{renderText(event.message)}</span>
-                  </div>
-                  <div className="small" style={compactDateStyle}>{formatDate(event.created_at ?? '')}</div>
-                </div>
-              )
-            })}
+          <div style={eventLogStyle}>
+            {buildEventLogItems(events).map((item, index) => (
+              item.kind === 'summary'
+                ? <EventSummaryLine item={item} key={`summary-${index}-${item.date}`} />
+                : <EventErrorBlock item={item} key={item.event.event_id ?? `error-${index}`} />
+            ))}
           </div>
         ) : <p className="small">No events returned.</p>}
       </div>
@@ -200,11 +188,13 @@ function ExpandedExperimentDetail({
   )
 }
 
-const compactScrollStyle: CSSProperties = {
+type EventLogItem =
+  | { kind: 'summary'; count: number; date: string }
+  | { kind: 'error'; event: ResearchEvent }
+
+const eventLogStyle: CSSProperties = {
   display: 'grid',
-  gap: 0,
-  maxHeight: 200,
-  overflowY: 'scroll',
+  gap: 8,
 }
 
 const compactLineStyle: CSSProperties = {
@@ -214,14 +204,6 @@ const compactLineStyle: CSSProperties = {
   gap: 8,
   minHeight: 32,
   padding: '5px 0',
-}
-
-const highlightedLineStyle: CSSProperties = {
-  ...compactLineStyle,
-  background: '#fef2f2',
-  borderBottom: '1px solid #fecaca',
-  borderRadius: 6,
-  padding: '5px 8px',
 }
 
 const compactTextStyle: CSSProperties = {
@@ -241,37 +223,11 @@ const mutedTruncateStyle: CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
-const errorDescriptionStyle: CSSProperties = {
-  ...mutedTruncateStyle,
-  color: '#b91c1c',
-  fontWeight: 600,
-}
-
 const compactDateStyle: CSSProperties = {
   marginLeft: 'auto',
   minWidth: 150,
   textAlign: 'right',
   whiteSpace: 'nowrap',
-}
-
-function eventDotStyle(event: ResearchEvent): CSSProperties {
-  return {
-    background: eventDotColor(event),
-    borderRadius: 999,
-    flex: '0 0 auto',
-    height: 8,
-    width: 8,
-  }
-}
-
-function eventDotColor(event: ResearchEvent): string {
-  const name = String(event.event_type ?? event.step ?? '').trim().toLowerCase()
-  const status = String(event.status ?? '').trim().toLowerCase()
-  const text = `${name} ${status} ${String(event.message ?? '').toLowerCase()}`
-  if (name.endsWith('_completed') || name.endsWith('_done') || ['completed', 'done', 'succeeded', 'success'].includes(status)) return '#16a34a'
-  if (text.includes('failed') || text.includes('error')) return '#dc2626'
-  if (name.endsWith('_started') || name.endsWith('_enqueued') || ['started', 'enqueued', 'queued', 'submitted', 'running'].includes(status)) return '#2563eb'
-  return '#94a3b8'
 }
 
 function artifactName(artifact: ResearchArtifact): string {
@@ -309,6 +265,7 @@ export function readCandidateId(experiment: ResearchExperiment): string | null {
     detail?.candidate,
     asRecord(detail?.output)?.candidate_id,
     asRecord(detail?.result)?.candidate_id,
+    candidateArtifactReference(readArray(detail?.artifacts)),
   ])
 }
 
@@ -327,6 +284,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>
 }
 
+function readArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
 function experimentDetail(experiment: ResearchExperiment): Record<string, unknown> | null {
   const response = asRecord(experiment.detail_response)
   return asRecord(response?.experiment) ?? response ?? asRecord(experiment)
@@ -341,18 +302,189 @@ function firstNonEmptyString(values: unknown[]): string | null {
   return null
 }
 
-function isFailedStatus(status?: string | null): boolean {
-  return ['failed', 'error', 'failure'].includes(String(status ?? '').trim().toLowerCase())
-}
-
-function highlightedFailureEventIndex(events: ResearchEvent[]): number {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (isFailureEventType(events[index])) return index
+function candidateArtifactReference(artifacts: unknown[]): string | null {
+  for (const artifact of artifacts) {
+    const record = asRecord(artifact)
+    if (!record) continue
+    const reference = firstNonEmptyString([
+      record.path,
+      record.artifact_path,
+      record.artifact_ref,
+      record.name,
+      record.artifact_name,
+      record.filename,
+      record.file_name,
+    ])
+    if (reference && reference.toLowerCase().includes('candidate')) return reference
   }
-  return events.length - 1
+  return null
 }
 
-function isFailureEventType(event: ResearchEvent | undefined): boolean {
-  const type = String(event?.event_type ?? event?.step ?? '').toLowerCase()
-  return type.includes('error') || type.includes('failed') || type.includes('failure')
+function buildEventLogItems(events: ResearchEvent[]): EventLogItem[] {
+  const items: EventLogItem[] = []
+  let pendingHappyEvents: ResearchEvent[] = []
+
+  for (const event of events) {
+    if (isErrorEvent(event)) {
+      flushHappyEvents(items, pendingHappyEvents)
+      pendingHappyEvents = []
+      items.push({ kind: 'error', event })
+      continue
+    }
+
+    if (isHappyPathEvent(event)) {
+      pendingHappyEvents.push(event)
+      continue
+    }
+
+    flushHappyEvents(items, pendingHappyEvents)
+    pendingHappyEvents = []
+  }
+
+  flushHappyEvents(items, pendingHappyEvents)
+  return items
+}
+
+function flushHappyEvents(items: EventLogItem[], events: ResearchEvent[]) {
+  if (events.length === 0) return
+  const lastEvent = events.at(-1)
+  items.push({
+    kind: 'summary',
+    count: events.length,
+    date: formatSummaryDate(lastEvent?.created_at),
+  })
+}
+
+function EventSummaryLine({ item }: { item: Extract<EventLogItem, { kind: 'summary' }> }) {
+  const label = item.count === 1 ? '1 step completed' : `${item.count} steps completed`
+  return (
+    <div style={summaryLineStyle}>
+      <span aria-hidden="true" style={greenDotStyle} />
+      <span>{label} · {item.date}</span>
+    </div>
+  )
+}
+
+function EventErrorBlock({ item }: { item: Extract<EventLogItem, { kind: 'error' }> }) {
+  const [expanded, setExpanded] = useState(false)
+  const message = renderText(item.event.message)
+  const longMessage = isLongErrorMessage(message)
+
+  return (
+    <div style={errorBlockStyle}>
+      <div style={errorHeaderStyle}>
+        <span aria-hidden="true" style={errorDotStyle}>×</span>
+        <strong style={errorTitleStyle}>{renderText(item.event.event_type ?? item.event.step)}</strong>
+      </div>
+      <div style={expanded ? errorMessageStyle : clampedErrorMessageStyle}>
+        {message}
+      </div>
+      {longMessage ? (
+        <button
+          className="text-link"
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          style={showMoreButtonStyle}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+const summaryLineStyle: CSSProperties = {
+  alignItems: 'center',
+  color: '#64748b',
+  display: 'flex',
+  gap: 8,
+  minHeight: 28,
+  padding: '3px 0',
+}
+
+const greenDotStyle: CSSProperties = {
+  background: '#16a34a',
+  borderRadius: 999,
+  flex: '0 0 auto',
+  height: 8,
+  width: 8,
+}
+
+const errorBlockStyle: CSSProperties = {
+  background: '#fef2f2',
+  border: '1px solid #fecaca',
+  borderRadius: 6,
+  display: 'grid',
+  gap: 6,
+  padding: 10,
+}
+
+const errorHeaderStyle: CSSProperties = {
+  alignItems: 'center',
+  display: 'flex',
+  gap: 8,
+  minWidth: 0,
+}
+
+const errorDotStyle: CSSProperties = {
+  alignItems: 'center',
+  color: '#dc2626',
+  display: 'inline-flex',
+  flex: '0 0 auto',
+  fontSize: 13,
+  fontWeight: 800,
+  height: 14,
+  justifyContent: 'center',
+  lineHeight: 1,
+  width: 14,
+}
+
+const errorTitleStyle: CSSProperties = {
+  color: '#b91c1c',
+  overflowWrap: 'anywhere',
+}
+
+const errorMessageStyle: CSSProperties = {
+  color: '#b91c1c',
+  maxWidth: '100%',
+  overflow: 'hidden',
+  overflowWrap: 'anywhere',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+}
+
+const clampedErrorMessageStyle: CSSProperties = {
+  ...errorMessageStyle,
+  display: '-webkit-box',
+  WebkitBoxOrient: 'vertical',
+  WebkitLineClamp: 3,
+}
+
+const showMoreButtonStyle: CSSProperties = {
+  justifySelf: 'start',
+  padding: 0,
+  width: 'auto',
+}
+
+function isHappyPathEvent(event: ResearchEvent): boolean {
+  const type = eventName(event)
+  return !isErrorEvent(event) && (type.endsWith('_completed') || type.endsWith('_started'))
+}
+
+function isErrorEvent(event: ResearchEvent): boolean {
+  const text = `${eventName(event)} ${String(event.message ?? '').toLowerCase()}`
+  return text.includes('_failed') || text.includes('_error') || text.includes('error') || text.includes('failed') || text.includes('failure')
+}
+
+function eventName(event: ResearchEvent): string {
+  return String(event.event_type ?? event.step ?? '').trim().toLowerCase()
+}
+
+function formatSummaryDate(value?: string | null): string {
+  if (!value) return '—'
+  return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+function isLongErrorMessage(message: string): boolean {
+  return message.length > 220 || message.split('\n').length > 3
 }
