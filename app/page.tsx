@@ -93,10 +93,11 @@ export default async function HomePage() {
   const failedJobs = [...jobRows, ...rebuildRows].filter((row) => readLower(row, ['status', 'state']) === 'failed')
   const latestSignal = signalRows[0] ?? {}
   const activePointer = pointerRows[0] ?? {}
-  const activeSignalId = readText(activePointer, ['active_candidate_id', 'active_bundle_id']) || readText(latestSignal, ['model_version_id', 'candidate_id', 'id'])
-  const lastFlip = signalRows.find((row) => readText(row, ['direction', 'signal', 'stance']))
-  const officialDirection = readText(lastFlip, ['direction', 'signal', 'stance'])
+  const lastFlip = signalRows.find((row) => readSignalDirection(row))
+  const officialDirection = readSignalDirection(lastFlip) || 'neutral'
+  const officialTicker = readText(lastFlip, ['ticker', 'symbol']) || readText(activePointer, ['ticker', 'symbol']) || 'SPY'
   const officialTimestamp = readText(lastFlip, ['signal_date', 'date', 'updated_at'])
+  const officialLabel = readText(activePointer, ['signal_name', 'name', 'label']) || readText(latestSignal, ['signal_name', 'name', 'label'])
   const actions = buildActions(staleSources, experimentRows, failedJobs, candidateRows)
   const feed = buildFeed(experimentRows, jobRows, signalRows, rebuildRows)
 
@@ -109,7 +110,7 @@ export default async function HomePage() {
         <KpiTile
           href="/signals"
           label="Official signal"
-          value={formatOfficialSignalId(activeSignalId)}
+          value={formatOfficialSignalValue({ label: officialLabel, ticker: officialTicker, direction: officialDirection })}
           sub={lastFlip ? <OfficialSignalSub direction={officialDirection} timestamp={officialTimestamp} /> : 'unavailable'}
         />
       </div>
@@ -383,6 +384,20 @@ function readLower(row: unknown, keys: string[]): string {
   return readText(row, keys).trim().toLowerCase()
 }
 
+function readSignalDirection(row: unknown): string {
+  const direction = readLower(row, ['direction', 'stance'])
+  if (['long', 'short', 'neutral', 'buy', 'sell', 'flat', 'hold'].includes(direction)) {
+    return direction
+  }
+
+  const signal = readLower(row, ['signal'])
+  if (['long', 'short', 'neutral', 'buy', 'sell', 'flat', 'hold'].includes(signal)) {
+    return signal
+  }
+
+  return ''
+}
+
 function toneForStatus(status: string): FeedItem['tone'] {
   if (status === 'failed' || status === 'error') return 'red'
   if (status === 'queued' || status === 'running' || status === 'started') return 'amber'
@@ -397,10 +412,17 @@ function directionBadgeClass(direction: string): string {
   return 'queued'
 }
 
-function formatOfficialSignalId(id: string): string {
-  if (!id || id === '—') return '—'
-  if (/^\d+$/.test(id)) return `Signal #${truncateId(id, 8)}`
-  return truncateId(id, 12)
+function formatOfficialSignalValue({
+  label,
+  ticker,
+  direction,
+}: {
+  label: string
+  ticker: string
+  direction: string
+}): string {
+  if (label && !/^\d+$/.test(label)) return truncateId(label, 18)
+  return `${ticker || 'SPY'} · ${direction || 'neutral'}`
 }
 
 function shiftIsoDays(days: number): string {

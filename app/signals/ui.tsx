@@ -134,6 +134,14 @@ const signalShellStyle = {
   background: '#fff',
 } satisfies React.CSSProperties
 
+const selectionPromptStyle = {
+  minHeight: 320,
+  display: 'grid',
+  placeItems: 'center',
+  color: '#64748b',
+  textAlign: 'center',
+} satisfies React.CSSProperties
+
 const columnStyle = {
   minWidth: 0,
   minHeight: 0,
@@ -141,12 +149,18 @@ const columnStyle = {
   overflowX: 'hidden',
 } satisfies React.CSSProperties
 
+function initialCandidateParam(): string | null {
+  if (typeof window === 'undefined') return null
+  const value = new URLSearchParams(window.location.search).get('candidate')
+  return value?.trim() || null
+}
+
 export default function SignalsWorkspace({ adminEmail }: { adminEmail: string }) {
   const [search, setSearch] = useState('')
   const [evaluationList, setEvaluationList] = useState<SignalEvaluationListResponse>({ candidates: [], sources: {}, gaps: [] })
   const [monitor, setMonitor] = useState<MonitorState>({ history: [], lastFlips: {}, flips: [] })
   const [selectedReport, setSelectedReport] = useState<SignalEvaluationReport | null>(null)
-  const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(() => initialCandidateParam())
   const [activeChartSeries, setActiveChartSeries] = useState<PrimaryChartSeries>('equity_curve')
   const [loading, setLoading] = useState(false)
   const [reportLoading, setReportLoading] = useState(false)
@@ -163,8 +177,8 @@ export default function SignalsWorkspace({ adminEmail }: { adminEmail: string })
     [comparisonRows, search]
   )
   const selectedRow = useMemo(
-    () => comparisonRows.find((row) => row.id === selectedRowId) ?? filteredRows[0] ?? null,
-    [comparisonRows, filteredRows, selectedRowId]
+    () => comparisonRows.find((row) => row.id === selectedRowId) ?? null,
+    [comparisonRows, selectedRowId]
   )
 
   async function loadEvaluation() {
@@ -398,13 +412,29 @@ function ChartWorkspace({
           </button>
         ))}
       </div>
-      <ChartPanel seriesKey={activeSeries} report={report} />
-      <MetricsRow report={report} selectedRow={selectedRow} />
+      <ChartPanel seriesKey={activeSeries} report={report} selectedRow={selectedRow} />
+      {selectedRow ? <MetricsRow report={report} selectedRow={selectedRow} /> : null}
     </main>
   )
 }
 
-function ChartPanel({ seriesKey, report }: { seriesKey: PrimaryChartSeries; report: SignalEvaluationReport | null }) {
+function ChartPanel({
+  seriesKey,
+  report,
+  selectedRow,
+}: {
+  seriesKey: PrimaryChartSeries
+  report: SignalEvaluationReport | null
+  selectedRow: ComparisonRow | null
+}) {
+  if (!selectedRow) {
+    return (
+      <section style={{ minWidth: 0, width: '100%', minHeight: 360, display: 'grid', alignContent: 'stretch' }}>
+        <SelectionPrompt />
+      </section>
+    )
+  }
+
   const series = report?.series?.[seriesKey]
   const points = Array.isArray(series?.points) ? series.points : []
   const chartPoints = pointsToChartPoints(points, series?.x_field, series?.y_field)
@@ -419,6 +449,14 @@ function ChartPanel({ seriesKey, report }: { seriesKey: PrimaryChartSeries; repo
         </div>
       )}
     </section>
+  )
+}
+
+function SelectionPrompt() {
+  return (
+    <div className="small" style={selectionPromptStyle}>
+      Select a candidate from the list
+    </div>
   )
 }
 
@@ -489,8 +527,8 @@ function MetricsRow({ report, selectedRow }: { report: SignalEvaluationReport | 
 function SelectedCandidatePanel({ loading, report, selectedRow }: { loading: boolean; report: SignalEvaluationReport | null; selectedRow: ComparisonRow | null }) {
   if (!selectedRow) {
     return (
-      <aside style={{ ...columnStyle, borderLeft: '1px solid #e2e8f0', padding: 12 }}>
-        <EmptyState>Select a candidate.</EmptyState>
+      <aside style={{ ...columnStyle, borderLeft: '1px solid #e2e8f0', padding: 12, display: 'grid', placeItems: 'center' }}>
+        <SelectionPrompt />
       </aside>
     )
   }
@@ -706,28 +744,10 @@ function filterRows(rows: ComparisonRow[], search: string): ComparisonRow[] {
 }
 
 function candidateDisplayId(candidate: SignalEvaluationCandidateSummary): string {
-  const record = candidate as SignalEvaluationCandidateSummary & Record<string, unknown>
-  const preferred = [
-    record.short_id,
-    record.shortId,
-    record.candidate_short_id,
-    record.candidateShortId,
-    record.name,
-    record.candidate_name,
-    candidate.display_name,
-  ].find((value) => typeof value === 'string' && value.trim())
-
-  if (typeof preferred === 'string' && preferred.trim()) return preferred.trim()
-
   const raw = candidate.candidate_id
-  const segments = raw.split(/[:/|#]+/).map((segment) => segment.trim()).filter(Boolean)
-  const last = segments.at(-1)
-  if (last && last !== raw) return last
-
-  const experimentMatch = raw.match(/(?:experiment|exp)[_-]?([a-z0-9]+)$/i)
-  if (experimentMatch?.[1]) return `exp-${experimentMatch[1]}`
-
-  return raw
+  const lastHyphenSegment = raw.split('-').map((segment) => segment.trim()).filter(Boolean).at(-1)
+  if (lastHyphenSegment && lastHyphenSegment !== raw) return lastHyphenSegment
+  return raw.length > 8 ? raw.slice(-8) : raw
 }
 
 function evidenceFromCandidate(candidate: SignalEvaluationCandidateSummary): Record<EvidenceKey, boolean> {

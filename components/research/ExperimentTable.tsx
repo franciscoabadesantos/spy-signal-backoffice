@@ -99,8 +99,10 @@ export function ExperimentTable({
                     style={{ cursor: 'pointer' }}
                     tabIndex={0}
                   >
-                    <td onClick={(event) => event.stopPropagation()}>
-                      <CopyableId id={experiment.experiment_id} maxLen={12} />
+                    <td>
+                      <span onClick={(event) => event.stopPropagation()}>
+                        <CopyableId id={experiment.experiment_id} maxLen={12} />
+                      </span>
                     </td>
                     <td>{renderText(experiment.strategy_family ?? experiment.experiment_name)}</td>
                     <td>{tickerText(experiment)}</td>
@@ -108,8 +110,8 @@ export function ExperimentTable({
                     <td><StatusBadge status={experiment.status} /></td>
                     <td onClick={(event) => event.stopPropagation()}>
                       {candidateId ? (
-                        <Link className="text-link" href={`/signals?candidate_id=${encodeURIComponent(candidateId)}`}>
-                          View candidate →
+                        <Link className="text-link" href={`/signals?candidate=${encodeURIComponent(candidateId)}`}>
+                          View in Signals →
                         </Link>
                       ) : '—'}
                     </td>
@@ -121,6 +123,7 @@ export function ExperimentTable({
                         <ExpandedExperimentDetail
                           artifacts={artifacts}
                           events={events}
+                          failed={isFailedStatus(experiment.status)}
                           loading={loadingDetail}
                         />
                       </td>
@@ -144,13 +147,16 @@ export function ExperimentTable({
 function ExpandedExperimentDetail({
   artifacts,
   events,
+  failed,
   loading,
 }: {
   artifacts: ResearchArtifact[]
   events: ResearchEvent[]
+  failed: boolean
   loading: boolean
 }) {
   if (loading) return <p className="small">Loading events and artifacts...</p>
+  const highlightedEventIndex = failed ? highlightedFailureEventIndex(events) : -1
 
   return (
     <div className="research-inline-detail" style={{ display: 'grid', gap: 16 }}>
@@ -158,16 +164,19 @@ function ExpandedExperimentDetail({
         <h4 style={{ marginBottom: 8 }}>Event log</h4>
         {events.length ? (
           <div style={compactScrollStyle}>
-            {events.map((event, index) => (
-              <div style={compactLineStyle} key={event.event_id ?? `${event.created_at}-${index}`}>
-                <span aria-hidden="true" style={eventDotStyle(event)} />
-                <div style={compactTextStyle}>
-                  <strong>{renderText(event.event_type ?? event.step)}</strong>
-                  <span style={mutedTruncateStyle}>{renderText(event.message)}</span>
+            {events.map((event, index) => {
+              const highlighted = index === highlightedEventIndex
+              return (
+                <div style={highlighted ? highlightedLineStyle : compactLineStyle} key={event.event_id ?? `${event.created_at}-${index}`}>
+                  <span aria-hidden="true" style={eventDotStyle(event)} />
+                  <div style={compactTextStyle}>
+                    <strong>{renderText(event.event_type ?? event.step)}</strong>
+                    <span style={highlighted ? errorDescriptionStyle : mutedTruncateStyle}>{renderText(event.message)}</span>
+                  </div>
+                  <div className="small" style={compactDateStyle}>{formatDate(event.created_at ?? '')}</div>
                 </div>
-                <div className="small" style={compactDateStyle}>{formatDate(event.created_at ?? '')}</div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : <p className="small">No events returned.</p>}
       </div>
@@ -207,6 +216,14 @@ const compactLineStyle: CSSProperties = {
   padding: '5px 0',
 }
 
+const highlightedLineStyle: CSSProperties = {
+  ...compactLineStyle,
+  background: '#fef2f2',
+  borderBottom: '1px solid #fecaca',
+  borderRadius: 6,
+  padding: '5px 8px',
+}
+
 const compactTextStyle: CSSProperties = {
   alignItems: 'baseline',
   display: 'flex',
@@ -222,6 +239,12 @@ const mutedTruncateStyle: CSSProperties = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
+}
+
+const errorDescriptionStyle: CSSProperties = {
+  ...mutedTruncateStyle,
+  color: '#b91c1c',
+  fontWeight: 600,
 }
 
 const compactDateStyle: CSSProperties = {
@@ -278,7 +301,15 @@ function tickerText(experiment: ResearchExperiment): string {
 }
 
 export function readCandidateId(experiment: ResearchExperiment): string | null {
-  return findCandidateId(experiment, 0, new Set())
+  const detail = experimentDetail(experiment)
+  return firstNonEmptyString([
+    detail?.candidate_id,
+    detail?.output_candidate_id,
+    detail?.registered_candidate_id,
+    detail?.candidate,
+    asRecord(detail?.output)?.candidate_id,
+    asRecord(detail?.result)?.candidate_id,
+  ])
 }
 
 export function experimentAnchorId(experimentId: string): string {
@@ -296,31 +327,32 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>
 }
 
-function findCandidateId(value: unknown, depth: number, seen: Set<unknown>): string | null {
-  if (depth > 5 || !value || typeof value !== 'object' || seen.has(value)) return null
-  seen.add(value)
+function experimentDetail(experiment: ResearchExperiment): Record<string, unknown> | null {
+  const response = asRecord(experiment.detail_response)
+  return asRecord(response?.experiment) ?? response ?? asRecord(experiment)
+}
 
-  const record = asRecord(value)
-  if (!record) return null
-  for (const key of ['candidate_id', 'candidateId', 'output_candidate', 'outputCandidate', 'registered_candidate', 'registeredCandidate', 'promoted_candidate', 'candidate']) {
-    const candidate = readCandidateValue(record[key])
-    if (candidate) return candidate
-  }
-
-  for (const nested of Object.values(record)) {
-    const candidate = findCandidateId(nested, depth + 1, seen)
-    if (candidate) return candidate
+function firstNonEmptyString(values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim()
+    }
   }
   return null
 }
 
-function readCandidateValue(value: unknown): string | null {
-  if (typeof value === 'string' && value.trim()) return value
-  const record = asRecord(value)
-  if (!record) return null
-  for (const key of ['candidate_id', 'candidateId', 'id', 'candidate_ref', 'candidateRef']) {
-    const candidate = record[key]
-    if (typeof candidate === 'string' && candidate.trim()) return candidate
+function isFailedStatus(status?: string | null): boolean {
+  return ['failed', 'error', 'failure'].includes(String(status ?? '').trim().toLowerCase())
+}
+
+function highlightedFailureEventIndex(events: ResearchEvent[]): number {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (isFailureEventType(events[index])) return index
   }
-  return null
+  return events.length - 1
+}
+
+function isFailureEventType(event: ResearchEvent | undefined): boolean {
+  const type = String(event?.event_type ?? event?.step ?? '').toLowerCase()
+  return type.includes('error') || type.includes('failed') || type.includes('failure')
 }

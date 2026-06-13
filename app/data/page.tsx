@@ -60,7 +60,6 @@ export default async function DataPage({ searchParams }: PageProps) {
         <div className="split-row">
           <div>
             <h1>Data</h1>
-            <p className="small">Coverage calendar and repair controls use the existing data-ops backend contracts.</p>
           </div>
           <div className="small">Admin: {admin.email}</div>
         </div>
