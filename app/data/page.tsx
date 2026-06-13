@@ -48,6 +48,9 @@ export default async function DataPage({ searchParams }: PageProps) {
   const health = healthResult.status === 'fulfilled' && healthResult.value.upstream.ok
     ? healthResult.value.payload as HealthResponse
     : null
+  if (health) {
+    console.info('[data] data-ops health raw response', JSON.stringify(health).slice(0, 4000))
+  }
   const calendarDays = buildCalendarDays(health)
   const sources = buildSourceRows(health)
   const coverage = coveragePercent(health)
@@ -66,7 +69,7 @@ export default async function DataPage({ searchParams }: PageProps) {
       </div>
 
       <div className="metric-grid">
-        <KpiCard label="Coverage this month" value={coverage === null ? '—' : String(coverage)} unit={coverage === null ? undefined : '%'} sub={health ? 'From current health rows' : 'unavailable'} />
+        <KpiCard label="Coverage this month" value={coverage === null ? '—' : String(coverage)} unit={coverage === null ? undefined : '%'} sub={health ? 'Computed from returned day/domain statuses' : 'unavailable'} />
         <KpiCard label="Sources with gaps" value={health ? String(staleCount) : '—'} sub={health ? 'Missing or partial status' : 'unavailable'} />
       </div>
 

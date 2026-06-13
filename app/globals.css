@@ -1160,6 +1160,11 @@ details summary {
   border-color: #fecaca;
 }
 
+.calendar-swatch.weekend {
+  background: #e5e7eb;
+  border-color: #cbd5e1;
+}
+
 .calendar-weekdays,
 .calendar-grid {
   display: grid;
@@ -1202,9 +1207,9 @@ details summary {
 }
 
 .calendar-day.weekend {
-  border-color: #f1f5f9;
-  background: #f8fafc;
-  color: #94a3b8;
+  border-color: #cbd5e1;
+  background: #e5e7eb;
+  color: #64748b;
   cursor: default;
 }
 

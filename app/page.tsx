@@ -21,6 +21,9 @@ type FeedItem = {
   tone: 'green' | 'amber' | 'red' | 'blue'
 }
 
+const DEFAULT_CONTROL_ROOM_TIMEOUT_MS = 8000
+const DATA_HEALTH_TIMEOUT_MS = 12000
+
 export default async function HomePage() {
   await requireAdminUser()
   const today = new Date().toISOString().slice(0, 10)
@@ -32,7 +35,7 @@ export default async function HomePage() {
       searchParams: new URLSearchParams({ domains: 'market,macro,release-calendar', start_date: thirtyDaysAgo, end_date: today }),
       requireBackendServiceToken: true,
       includeCloudflareAccess: true,
-    }, 'data health'),
+    }, 'data health', DATA_HEALTH_TIMEOUT_MS),
     fetchWithTimeout({
       path: '/analyst/research/experiments',
       searchParams: new URLSearchParams({ limit: '80' }),
@@ -328,14 +331,14 @@ function hasEvidence(row: Record<string, unknown>, keys: string[]): boolean {
   return keys.some((key) => flat[key] !== null && flat[key] !== undefined && flat[key] !== '')
 }
 
-async function fetchWithTimeout(options: BackendRequestOptions, label: string): Promise<TimedFetch> {
+async function fetchWithTimeout(options: BackendRequestOptions, label: string, timeoutMs = DEFAULT_CONTROL_ROOM_TIMEOUT_MS): Promise<TimedFetch> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const startedAt = Date.now()
   try {
     const result = await Promise.race([
       requestBackendJson(options),
       new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), 8000)
+        timer = setTimeout(() => resolve(null), timeoutMs)
       }),
     ])
     if (timer) clearTimeout(timer)

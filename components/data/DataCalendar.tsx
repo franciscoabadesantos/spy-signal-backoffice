@@ -38,6 +38,7 @@ export function DataCalendar({ days, month, unavailableNote }: Props) {
           <Legend swatch="ok" label="Full" />
           <Legend swatch="partial" label="Partial" />
           <Legend swatch="missing" label="Missing" />
+          <Legend swatch="weekend" label="Weekend" />
         </div>
       </div>
       <div className="calendar-weekdays">

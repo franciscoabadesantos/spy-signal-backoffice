@@ -5,6 +5,8 @@ import { Sidebar, type SidebarHealth } from '@/components/layout/Sidebar'
 import { requestBackendJson } from '@/lib/backend-client'
 import './globals.css'
 
+const DATA_HEALTH_TIMEOUT_MS = 12000
+
 export const metadata: Metadata = {
   title: 'Spy Signal Backoffice',
   description: 'Admin-only operations console',
@@ -45,7 +47,7 @@ async function loadSidebarState(): Promise<{
   const today = new Date().toISOString().slice(0, 10)
   const [system, data, research, signals, registry, jobs] = await Promise.allSettled([
     requestBackendJson({ path: '/health', includeCloudflareAccess: true }),
-    requestBackendJson({
+    requestDataHealthWithTimeout({
       path: '/analyst/data-ops/health',
       searchParams: new URLSearchParams({ domains: 'market,macro,release-calendar', end_date: today }),
       requireBackendServiceToken: true,
@@ -108,8 +110,23 @@ function grayHealth(): SidebarHealth {
   }
 }
 
-function settledPayload(result: PromiseSettledResult<{ payload: unknown; upstream: Response }>): unknown {
-  return result.status === 'fulfilled' && result.value.upstream.ok ? result.value.payload : null
+async function requestDataHealthWithTimeout(options: Parameters<typeof requestBackendJson>[0]): Promise<{ payload: unknown; upstream: Response } | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const result = await Promise.race([
+      requestBackendJson(options),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), DATA_HEALTH_TIMEOUT_MS)
+      }),
+    ])
+    return result
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+function settledPayload(result: PromiseSettledResult<{ payload: unknown; upstream: Response } | null>): unknown {
+  return result.status === 'fulfilled' && result.value?.upstream.ok ? result.value.payload : null
 }
 
 function dotForDataHealth(payload: unknown): SidebarHealth['data'] {
