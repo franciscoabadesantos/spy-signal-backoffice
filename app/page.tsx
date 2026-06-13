@@ -1,9 +1,12 @@
 import Link from 'next/link'
+import type { ReactNode } from 'react'
 import { requireAdminUser } from '@/lib/admin-auth'
 import { requestBackendJson } from '@/lib/backend-client'
 import { timeAgo, truncateId } from '@/lib/format'
 
-type SettledFetch = PromiseSettledResult<{ payload: unknown; upstream: Response }>
+type BackendRequestOptions = Parameters<typeof requestBackendJson>[0]
+type TimedFetch = { payload: unknown; upstream: Response } | null
+type SettledFetch = PromiseSettledResult<TimedFetch>
 
 type Action = {
   text: string
@@ -23,51 +26,51 @@ export default async function HomePage() {
   const today = new Date().toISOString().slice(0, 10)
   const thirtyDaysAgo = shiftIsoDays(-30)
   const [health, dataHealth, experiments, candidates, signalHistory, watchlists, jobs, rebuildJobs, activePointers] = await Promise.allSettled([
-    requestBackendJson({ path: '/health', includeCloudflareAccess: true }),
-    requestBackendJson({
+    fetchWithTimeout({ path: '/health', includeCloudflareAccess: true }, 'backend health'),
+    fetchWithTimeout({
       path: '/analyst/data-ops/health',
       searchParams: new URLSearchParams({ domains: 'market,macro,release-calendar', start_date: thirtyDaysAgo, end_date: today }),
       requireBackendServiceToken: true,
       includeCloudflareAccess: true,
-    }),
-    requestBackendJson({
+    }, 'data health'),
+    fetchWithTimeout({
       path: '/analyst/research/experiments',
       searchParams: new URLSearchParams({ limit: '80' }),
       requireBackendServiceToken: true,
       includeCloudflareAccess: true,
-    }),
-    requestBackendJson({
+    }, 'research experiments'),
+    fetchWithTimeout({
       path: '/analyst/signal-evaluation/candidates',
       searchParams: new URLSearchParams({ limit: '200', include_official: 'true' }),
       requireBackendServiceToken: true,
       includeCloudflareAccess: true,
-    }),
-    requestBackendJson({
+    }, 'signal candidates'),
+    fetchWithTimeout({
       path: '/signals/history/SPY',
       searchParams: new URLSearchParams({ limit: '20' }),
       includeCloudflareAccess: true,
-    }),
-    requestBackendJson({
+    }, 'signal history'),
+    fetchWithTimeout({
       path: '/site/watchlist',
       searchParams: new URLSearchParams({ limit: '20' }),
       includeCloudflareAccess: true,
-    }),
-    requestBackendJson({
+    }, 'watchlists'),
+    fetchWithTimeout({
       path: '/analyst/jobs',
       searchParams: new URLSearchParams({ limit: '80' }),
       includeCloudflareAccess: true,
-    }),
-    requestBackendJson({
+    }, 'analyst jobs'),
+    fetchWithTimeout({
       path: '/analyst/data-ops/rebuild-jobs',
       searchParams: new URLSearchParams({ limit: '40' }),
       includeCloudflareAccess: true,
-    }),
-    requestBackendJson({
+    }, 'data rebuild jobs'),
+    fetchWithTimeout({
       path: '/analyst/registry/active-pointers',
       searchParams: new URLSearchParams({ limit: '20' }),
       requireBackendServiceToken: true,
       includeCloudflareAccess: true,
-    }),
+    }, 'active pointers'),
   ])
 
   const dataPayload = payloadOf(dataHealth)
@@ -92,6 +95,8 @@ export default async function HomePage() {
   const activePointer = pointerRows[0] ?? {}
   const activeSignalId = readText(activePointer, ['active_candidate_id', 'active_bundle_id']) || readText(latestSignal, ['model_version_id', 'candidate_id', 'id'])
   const lastFlip = signalRows.find((row) => readText(row, ['direction', 'signal', 'stance']))
+  const officialDirection = readText(lastFlip, ['direction', 'signal', 'stance'])
+  const officialTimestamp = readText(lastFlip, ['signal_date', 'date', 'updated_at'])
   const actions = buildActions(staleSources, experimentRows, failedJobs, candidateRows)
   const feed = buildFeed(experimentRows, jobRows, signalRows, rebuildRows)
 
@@ -105,7 +110,7 @@ export default async function HomePage() {
           href="/signals"
           label="Official signal"
           value={activeSignalId ? truncateId(activeSignalId, 12) : '—'}
-          sub={lastFlip ? `${readText(lastFlip, ['direction', 'signal', 'stance']) || 'signal'} · ${readText(lastFlip, ['signal_date', 'date', 'updated_at']) || '—'}` : 'unavailable'}
+          sub={lastFlip ? <OfficialSignalSub direction={officialDirection} timestamp={officialTimestamp} /> : 'unavailable'}
         />
       </div>
 
@@ -113,7 +118,7 @@ export default async function HomePage() {
         <section className="card">
           <div className="split-row">
             <h2>Next actions</h2>
-            <span className={health.status === 'fulfilled' && health.value.upstream.ok ? 'badge completed' : 'badge queued'}>
+            <span className={healthPayload ? 'badge completed' : 'badge queued'}>
               {healthPayload ? 'backend healthy' : 'health unavailable'}
             </span>
           </div>
@@ -163,7 +168,7 @@ function KpiTile({
   label: string
   value: string
   unit?: string
-  sub: string
+  sub: ReactNode
   tone?: 'green' | 'amber' | 'red'
 }) {
   return (
@@ -172,6 +177,18 @@ function KpiTile({
       <div className="metric-value">{value}{unit ? <span className="metric-unit">{unit}</span> : null}</div>
       <div className={tone ? `small text-${tone}` : 'small'}>{sub}</div>
     </Link>
+  )
+}
+
+function OfficialSignalSub({ direction, timestamp }: { direction: string; timestamp: string }) {
+  const label = direction && direction !== '—' ? direction : 'neutral'
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+      <span className={`badge ${directionBadgeClass(label)}`} style={{ fontSize: 10, padding: '2px 6px' }}>
+        {label}
+      </span>
+      <span>{timestamp ? timeAgo(timestamp) : '—'}</span>
+    </span>
   )
 }
 
@@ -306,8 +323,33 @@ function hasEvidence(row: Record<string, unknown>, keys: string[]): boolean {
   return keys.some((key) => flat[key] !== null && flat[key] !== undefined && flat[key] !== '')
 }
 
+async function fetchWithTimeout(options: BackendRequestOptions, label: string): Promise<TimedFetch> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const result = await Promise.race([
+      requestBackendJson(options),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), 3000)
+      }),
+    ])
+    if (timer) clearTimeout(timer)
+    if (result === null) {
+      console.warn(`[control-room] ${label} timed out after 3000ms`)
+      return null
+    }
+    if (label === 'data health') {
+      console.info('[control-room] data health raw response', JSON.stringify(result.payload).slice(0, 4000))
+    }
+    return result
+  } catch (error) {
+    if (timer) clearTimeout(timer)
+    console.warn(`[control-room] ${label} failed`, error instanceof Error ? error.message : error)
+    return null
+  }
+}
+
 function payloadOf(result: SettledFetch): unknown {
-  return result.status === 'fulfilled' && result.value.upstream.ok ? result.value.payload : null
+  return result.status === 'fulfilled' && result.value?.upstream.ok ? result.value.payload : null
 }
 
 function itemsOf(payload: unknown, keys: string[]): Record<string, unknown>[] {
@@ -339,6 +381,13 @@ function toneForStatus(status: string): FeedItem['tone'] {
   if (status === 'queued' || status === 'running' || status === 'started') return 'amber'
   if (status === 'completed' || status === 'ok' || status === 'succeeded') return 'green'
   return 'blue'
+}
+
+function directionBadgeClass(direction: string): string {
+  const normalized = direction.trim().toLowerCase()
+  if (normalized === 'long' || normalized === 'buy') return 'completed'
+  if (normalized === 'short' || normalized === 'sell') return 'failed'
+  return 'queued'
 }
 
 function shiftIsoDays(days: number): string {
