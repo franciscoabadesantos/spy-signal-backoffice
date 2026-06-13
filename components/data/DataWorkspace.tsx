@@ -190,6 +190,7 @@ export default function DataWorkspace({ adminEmail, initialDomain, initialEntity
 
   const brokenCount = inventory.filter((item) => item.status === 'missing').length
   const unknownCount = inventory.filter((item) => item.status === 'unknown').length
+  const visibleCoverage = selected && coverageMatchesSelectionAndMonth(coverage, selected, month) ? coverage : null
 
   return (
     <div className="page-stack">
@@ -293,16 +294,16 @@ export default function DataWorkspace({ adminEmail, initialDomain, initialEntity
 
               {coverageError ? <ContractError endpoint="/analyst/data-ops/coverage" error={coverageError} /> : null}
 
-              <CoverageSummary coverage={coverage} loading={coverageLoading} />
-              <MonthCalendar coverage={coverage} month={month} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
+              <CoverageSummary coverage={visibleCoverage} loading={coverageLoading} />
+              <MonthCalendar coverage={visibleCoverage} month={month} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
               <RepairDrawer
-                coverage={coverage}
+                coverage={visibleCoverage}
                 selected={selected}
                 selectedDay={selectedDay}
                 repairError={repairError}
                 repairState={repairState}
                 onClose={() => setSelectedDay(null)}
-                onDryRun={() => void submitDryRunRepair(selected, selectedDay, coverage, setRepairState, setRepairError)}
+                onDryRun={() => void submitDryRunRepair(selected, selectedDay, visibleCoverage, setRepairState, setRepairError)}
               />
             </>
           ) : (
@@ -514,6 +515,17 @@ function selectInitialItem(items: InventoryItem[], initialDomain?: string, initi
     if (match) return match
   }
   return items.find((item) => item.status === 'missing') ?? items[0] ?? null
+}
+
+function coverageMatchesSelectionAndMonth(coverage: CoverageResponse | null, selected: InventoryItem, month: string): coverage is CoverageResponse {
+  if (!coverage) return false
+  const { startDate, endDate } = monthBounds(month)
+  return (
+    coverage.domain === selected.domain &&
+    coverage.entity_key === selected.entity_key &&
+    coverage.start_date === startDate &&
+    coverage.end_date === endDate
+  )
 }
 
 function normalizeDomain(value?: string): DataDomain | null {
