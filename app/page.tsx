@@ -1,381 +1,352 @@
 import Link from 'next/link'
-import { BackofficeHealthPanel } from '@/app/components/backoffice-health-panel'
 import { requireAdminUser } from '@/lib/admin-auth'
-import type { BackofficeHealthSnapshot, HealthState, RouteProbe } from '@/lib/backoffice-health'
-import { loadBackofficeHealth } from '@/lib/backoffice-health'
+import { requestBackendJson } from '@/lib/backend-client'
+import { timeAgo, truncateId } from '@/lib/format'
+
+type SettledFetch = PromiseSettledResult<{ payload: unknown; upstream: Response }>
+
+type Action = {
+  text: string
+  href: string
+  sub?: string
+}
+
+type FeedItem = {
+  text: string
+  href?: string
+  at?: string | null
+  tone: 'green' | 'amber' | 'red' | 'blue'
+}
 
 export default async function HomePage() {
-  const admin = await requireAdminUser()
-  const health = await loadBackofficeHealth(admin.email)
-  const backendProbe = findProbe(health, 'Backend /health')
-  const researchProbe = findProbe(health, 'Research experiment list')
-  const dataProbe = findProbe(health, 'Data quality health')
-  const registryProbe = findProbe(health, 'Registry proxy')
+  await requireAdminUser()
+  const today = new Date().toISOString().slice(0, 10)
+  const thirtyDaysAgo = shiftIsoDays(-30)
+  const [health, dataHealth, experiments, candidates, signalHistory, watchlists, jobs, rebuildJobs, activePointers] = await Promise.allSettled([
+    requestBackendJson({ path: '/health', includeCloudflareAccess: true }),
+    requestBackendJson({
+      path: '/analyst/data-ops/health',
+      searchParams: new URLSearchParams({ domains: 'market,macro,release-calendar', start_date: thirtyDaysAgo, end_date: today }),
+      requireBackendServiceToken: true,
+      includeCloudflareAccess: true,
+    }),
+    requestBackendJson({
+      path: '/analyst/research/experiments',
+      searchParams: new URLSearchParams({ limit: '80' }),
+      requireBackendServiceToken: true,
+      includeCloudflareAccess: true,
+    }),
+    requestBackendJson({
+      path: '/analyst/signal-evaluation/candidates',
+      searchParams: new URLSearchParams({ limit: '200', include_official: 'true' }),
+      requireBackendServiceToken: true,
+      includeCloudflareAccess: true,
+    }),
+    requestBackendJson({
+      path: '/signals/history/SPY',
+      searchParams: new URLSearchParams({ limit: '20' }),
+      includeCloudflareAccess: true,
+    }),
+    requestBackendJson({
+      path: '/site/watchlist',
+      searchParams: new URLSearchParams({ limit: '20' }),
+      includeCloudflareAccess: true,
+    }),
+    requestBackendJson({
+      path: '/analyst/jobs',
+      searchParams: new URLSearchParams({ limit: '80' }),
+      includeCloudflareAccess: true,
+    }),
+    requestBackendJson({
+      path: '/analyst/data-ops/rebuild-jobs',
+      searchParams: new URLSearchParams({ limit: '40' }),
+      includeCloudflareAccess: true,
+    }),
+    requestBackendJson({
+      path: '/analyst/registry/active-pointers',
+      searchParams: new URLSearchParams({ limit: '20' }),
+      requireBackendServiceToken: true,
+      includeCloudflareAccess: true,
+    }),
+  ])
+
+  const dataPayload = payloadOf(dataHealth)
+  const experimentPayload = payloadOf(experiments)
+  const candidatePayload = payloadOf(candidates)
+  const healthPayload = payloadOf(health)
+  const experimentRows = itemsOf(payloadOf(experiments), ['experiments', 'items', 'results'])
+  const candidateRows = itemsOf(payloadOf(candidates), ['candidates', 'items', 'results'])
+  const signalRows = itemsOf(payloadOf(signalHistory), ['history', 'signals', 'items', 'results'])
+  const watchlistRows = itemsOf(payloadOf(watchlists), ['watchlists', 'items', 'results'])
+  const jobRows = itemsOf(payloadOf(jobs), ['jobs', 'items', 'results'])
+  const rebuildRows = itemsOf(payloadOf(rebuildJobs), ['jobs', 'items', 'results'])
+  const pointerRows = itemsOf(payloadOf(activePointers), ['active_pointers', 'pointers', 'items', 'results'])
+
+  const coverage = dataCoverage(dataPayload)
+  const staleSources = staleSourceRows(dataPayload)
+  const runningExperiments = experimentRows.filter((row) => ['running', 'queued', 'started'].includes(readLower(row, ['status', 'state']))).length
+  const failedExperiments = experimentRows.filter((row) => readLower(row, ['status', 'state']) === 'failed').length
+  const promoReady = candidateRows.filter(isPromoReady).length
+  const failedJobs = [...jobRows, ...rebuildRows].filter((row) => readLower(row, ['status', 'state']) === 'failed')
+  const latestSignal = signalRows[0] ?? {}
+  const activePointer = pointerRows[0] ?? {}
+  const activeSignalId = readText(activePointer, ['active_candidate_id', 'active_bundle_id']) || readText(latestSignal, ['model_version_id', 'candidate_id', 'id'])
+  const lastFlip = signalRows.find((row) => readText(row, ['direction', 'signal', 'stance']))
+  const actions = buildActions(staleSources, experimentRows, failedJobs, candidateRows)
+  const feed = buildFeed(experimentRows, jobRows, signalRows, rebuildRows)
 
   return (
     <div className="page-stack">
-      <div className="hero-panel">
-        <div>
-          <p className="eyebrow">Backoffice Operations Control Plane</p>
-          <h1>Start with data readiness, then inspect research, analyst validation, official signals, frontoffice activity, registry evidence, operations, and diagnostics.</h1>
-          <p className="hero-copy">
-            Backoffice is the internal control plane for the finance product. Check whether the data is good enough to trust, inspect active research and frontoffice-style validation, review official signal behavior and registry evidence, and use operations or diagnostics where backend or worker visibility is missing.
-          </p>
-        </div>
-        <div className="hero-actions">
-          <Link className="hero-link" href="/data-ops">Open Data Ops</Link>
-          <Link className="hero-link secondary-link" href="/research">Open Research Lab</Link>
-          <Link className="hero-link secondary-link" href="/signals">Open Signals</Link>
-          <Link className="hero-link secondary-link" href="/diagnostics">Open Diagnostics</Link>
-        </div>
-      </div>
-
-      <BackofficeHealthPanel snapshot={health} />
-
-      <div className="card">
-        <div className="split-row">
-          <div>
-            <h2>Control Room Operations Overview</h2>
-            <p className="small">
-              Data quality comes before research confidence. Research results are evidence, not automatic product decisions. Analyst validation, official signal inspection, frontoffice activity, registry review, and operations visibility are first-class control surfaces. Backoffice exposes missing backend contracts instead of hiding them.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="operations-grid">
-        <OperationCard
-          href="/data-ops"
-          title="Data Ops / Data Readiness"
-          controls="Coverage, missing days, freshness, duplicates, source comparison, macro release gaps, and repair or rebuild jobs."
-          matters="This is the first place to check before trusting research runs, analyst output, or future official signals."
-          availabilityLabel="Data quality health"
-          availabilityStatus={dataProbe?.status}
-          availabilityDetail={dataProbe?.message ?? 'Not available in the current health snapshot.'}
-          gap="No additional summary metrics are shown here because the Control Room should not invent data-readiness scores."
-        />
-        <OperationCard
-          href="/research"
-          title="Research Operations"
-          controls="Experiment creation, run library, run detail, events, artifacts, stages, evidence, lineage, compare, duplicate, cancel, and mark-failed flows."
-          matters="Research quality depends on Data Ops readiness, and research outputs remain evidence until reviewed through the registry and future official-signal controls."
-          availabilityLabel="Research experiment list"
-          availabilityStatus={researchProbe?.status}
-          availabilityDetail={researchProbe?.message ?? 'Not available in the current health snapshot.'}
-        />
-        <OperationCard
-          href="/analyst"
-          title="Analyst / Frontoffice Validation"
-          controls="Ticker analysis validation, ticker_signal_v1, ticker_snapshot, coverage_report, and structured market or earnings rendering."
-          matters="This checks what frontoffice-style research and analysis produces, even while the surface still uses internal smoke-test framing."
-          availabilityLabel="Backend API"
-          availabilityStatus={health.backendApi.status}
-          availabilityDetail="Dedicated Analyst route status is not summarized in the Control Room snapshot yet."
-          gap="Backend gap: add dedicated analyst/frontoffice validation contract health to the operations snapshot."
-        />
-        <OperationCard
+      <div className="control-kpi-grid">
+        <KpiTile href="/data" label="Data coverage" value={coverage === null ? '—' : String(coverage)} unit={coverage === null ? undefined : '%'} sub={dataPayload ? `${staleSources.length} sources stale` : 'unavailable'} tone={staleSources.length ? 'amber' : undefined} />
+        <KpiTile href="/research" label="Research" value={experimentPayload ? String(runningExperiments) : '—'} sub={experimentPayload ? `${failedExperiments} failed` : 'unavailable'} tone={failedExperiments ? 'red' : undefined} />
+        <KpiTile href="/signals" label="Candidates" value={candidatePayload ? String(candidateRows.length) : '—'} sub={candidatePayload ? `${promoReady} promo-ready` : 'unavailable'} tone={promoReady ? 'green' : undefined} />
+        <KpiTile
           href="/signals"
-          title="Official Signals"
-          controls="Latest screener signals, ticker signal history, last flips, flip events by date, and composition from existing finance-backend contracts."
-          matters="Official signal behavior needs a real workspace now, even though active model lineage, paper candidates, and forward evaluation are still missing."
-          availabilityLabel="Signal contracts"
-          availabilityDetail="Not included in the existing health snapshot. The /signals workspace uses thin admin proxies to existing finance-backend signal endpoints."
-          gap="Backend gaps remain for official model lineage, forward return evaluation, paper/shadow candidates, comparisons, and decay proposals."
-        />
-        <OperationCard
-          href="/frontoffice"
-          title="Frontoffice / User Research"
-          controls="All watched tickers, watchlist subscriptions, user-id based watchlist lookup, user AI research runs, and run detail lookup."
-          matters="Backoffice needs visibility into what users and frontoffice-style flows are researching, even while all-user admin views are missing."
-          availabilityLabel="Site contracts"
-          availabilityDetail="Not included in the existing health snapshot. The /frontoffice workspace uses thin admin proxies to existing site/watchlist and site/ai-research endpoints."
-          gap="Backend gaps remain for all-user research lists, user search, usage summaries, moderation controls, alert dashboards, and analytics summaries."
-        />
-        <OperationCard
-          href="/operations"
-          title="Queue & Worker Operations"
-          controls="Analyst jobs, Data Ops rebuild jobs, Research experiments, and a clearly labeled UI-only old queued/running heuristic."
-          matters="Operators need one place to inspect visible job surfaces while true queue depth and worker heartbeat are still missing."
-          availabilityLabel="Existing job list APIs"
-          availabilityDetail="Uses existing local Backoffice APIs for analyst jobs, data-ops rebuild jobs, and research experiments."
-          gap="Not worker health: queue depth, worker heartbeat, dispatch lag, dead-letter tasks, and unified retry/cancel need backend contracts."
-        />
-        <OperationCard
-          href="/registry"
-          title="Registry / Evidence"
-          controls="Candidates, bundles, readiness, promotion history, active pointers, evidence drilldowns, and lineage visibility."
-          matters="Registry is evidence and review now. Future registry mutations must be authorized through Backoffice and finance-backend."
-          availabilityLabel="Registry proxy"
-          availabilityStatus={registryProbe?.status}
-          availabilityDetail={registryProbe?.message ?? 'Not available in the current health snapshot.'}
-          gap="Read-only today: no add, delete, promote, activate, or replacement actions are implemented here."
-        />
-        <OperationCard
-          href="/diagnostics"
-          title="Diagnostics / System Health"
-          controls="Backend and registry reachability, protected route probes, raw debug entry points, and current visibility gaps."
-          matters="Use this when a route, proxy, service credential, or backend contract path is broken or unclear."
-          availabilityLabel="Backend / Registry probes"
-          availabilityStatus={worstStatus([backendProbe?.status, registryProbe?.status])}
-          availabilityDetail="Health snapshot covers backend reachability, registry proxy reachability, and selected protected route probes."
-          gap="Backend gap: unified queue and worker health is not exposed yet."
-        />
-        <OperationCard
-          href="/contracts"
-          title="Backend Contract Inventory"
-          controls="Backoffice-owned inventory of available, proxied, not-yet-wired, and missing backend contracts."
-          matters="Operators and developers need one place to see what is real backend data, what is UI-only, and what blocks the next control-plane capabilities."
-          availabilityLabel="Inventory source"
-          availabilityDetail="Static Backoffice-owned inventory until finance-backend exposes contract metadata."
-          gap="Backend gap: no contract metadata endpoint exists yet."
+          label="Official signal"
+          value={activeSignalId ? truncateId(activeSignalId, 12) : '—'}
+          sub={lastFlip ? `${readText(lastFlip, ['direction', 'signal', 'stance']) || 'signal'} · ${readText(lastFlip, ['signal_date', 'date', 'updated_at']) || '—'}` : 'unavailable'}
         />
       </div>
 
-      <div className="card">
-        <h2>What Should I Do?</h2>
-        <div className="list-stack">
-          <div className="list-row">
-            <div>
-              <strong>1. Data looks wrong or research seems unreliable</strong>
-              <div className="small">Open Data Ops. Check coverage, missing days, freshness, duplicates, source comparison, macro release gaps, and repair or rebuild jobs before trusting downstream conclusions.</div>
-            </div>
-            <Link className="text-link" href="/data-ops">Open Data Ops</Link>
+      <div className="control-room-grid">
+        <section className="card">
+          <div className="split-row">
+            <h2>Next actions</h2>
+            <span className={health.status === 'fulfilled' && health.value.upstream.ok ? 'badge completed' : 'badge queued'}>
+              {healthPayload ? 'backend healthy' : 'health unavailable'}
+            </span>
           </div>
-          <div className="list-row">
-            <div>
-              <strong>2. Need to validate a ticker or signal-style answer</strong>
-              <div className="small">Open Analyst. Review ticker_signal_v1, ticker_snapshot, coverage_report, and structured market or earnings output as frontoffice-adjacent validation.</div>
-            </div>
-            <Link className="text-link" href="/analyst">Open Analyst</Link>
-          </div>
-          <div className="list-row">
-            <div>
-              <strong>3. Need to inspect experiment evidence</strong>
-              <div className="small">Open Research Lab. Inspect runs, stages, events, artifacts, evidence, lineage, compare views, and operational controls for research jobs.</div>
-            </div>
-            <Link className="text-link" href="/research">Open Research Lab</Link>
-          </div>
-          <div className="list-row">
-            <div>
-              <strong>4. Need to review candidates, readiness, or evidence</strong>
-              <div className="small">Open Registry / Evidence. Review candidates, bundles, promotion history, active pointers, evidence, and lineage without mutating registry state.</div>
-            </div>
-            <Link className="text-link" href="/registry">Open Registry</Link>
-          </div>
-          <div className="list-row">
-            <div>
-              <strong>5. Need to inspect official signal behavior</strong>
-              <div className="small">Open Signals. Inspect current screener signals, ticker history, flips, and composition while treating official evaluation gaps as missing backend contracts.</div>
-            </div>
-            <Link className="text-link" href="/signals">Open Signals</Link>
-          </div>
-          <div className="list-row">
-            <div>
-              <strong>6. Need user/frontoffice research visibility</strong>
-              <div className="small">Open Frontoffice. Inspect all watched tickers, subscriptions, and user-id based AI research runs as far as current backend contracts allow.</div>
-            </div>
-            <Link className="text-link" href="/frontoffice">Open Frontoffice</Link>
-          </div>
-          <div className="list-row">
-            <div>
-              <strong>7. Need job or queue/worker visibility</strong>
-              <div className="small">Open Operations for current job surfaces. Open Diagnostics when protected routes or backend reachability are broken.</div>
-            </div>
-            <div className="meta">
-              <Link className="text-link" href="/operations">Open Operations</Link>
-              <Link className="text-link" href="/diagnostics">Open Diagnostics</Link>
-            </div>
-          </div>
-          <div className="list-row">
-            <div>
-              <strong>8. Need to know whether a backend contract exists</strong>
-              <div className="small">Open Contracts. It separates available/proxied contracts from missing backend capabilities.</div>
-            </div>
-            <Link className="text-link" href="/contracts">Open Contracts</Link>
-          </div>
-        </div>
-      </div>
+          {actions.length ? (
+            <ol className="action-list">
+              {actions.slice(0, 5).map((action) => (
+                <li key={`${action.href}-${action.text}`}>
+                  <Link href={action.href}>{action.text}</Link>
+                  {action.sub ? <div className="small">{action.sub}</div> : null}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="small">No open actions - system looks healthy.</p>
+          )}
+        </section>
 
-      <div className="card">
-        <h2>Partial Workspaces / Remaining Gaps</h2>
-        <p className="small">
-          These are now Backoffice workspaces where possible. Each workspace uses existing finance-backend data and shows missing backend contracts inside the relevant page.
-        </p>
-        <div className="planned-grid">
-          <PlannedSurface
-            title="Official Signals"
-            href="/signals"
-            why="We cannot know whether a model is truly good only from backtests. Operators need official, paper, and live signal evaluation, forward performance, decay detection, and comparison against active models."
-            status="Workspace exists at /signals with current signal inspection. Full official evaluation is not implemented."
-            gaps={[
-              'official signal overview',
-              'active official model or candidate lineage',
-              'signal history linked to candidate or model',
-              'forward signal evaluation',
-              'paper or shadow candidates',
-              'candidate vs current official comparison',
-              'decay and replacement proposals',
-            ]}
-          />
-          <PlannedSurface
-            title="Frontoffice / User Research Control"
-            href="/frontoffice"
-            why="Backoffice must see and control what people are researching through the frontoffice or product experience."
-            status="Workspace exists at /frontoffice with watchlist and user-id based AI research visibility. All-user admin views are not implemented."
-            gaps={[
-              'user research runs and lists',
-              'user intent and query visibility',
-              'watchlist or user activity summary',
-              'rate and usage visibility',
-              'alert and research status',
-              'admin moderation or control if needed',
-            ]}
-          />
-          <PlannedSurface
-            title="Queue & Worker Operations"
-            href="/operations"
-            why="Data Ops, Analyst jobs, and Research jobs all rely on queues and workers, but Backoffice currently sees only per-job polling and stuck heuristics."
-            status="Workspace exists at /operations with current visible job lists. True queue and worker health are not implemented."
-            gaps={[
-              'queue depth',
-              'worker heartbeat',
-              'failed and stuck job counts',
-              'retry or cancel visibility across job types',
-              'task age and dispatch lag',
-            ]}
-          />
-          <PlannedSurface
-            title="Campaign / Batch Research"
-            why="Operators need to run many research configurations safely, likely up to 250 queued runs per campaign, without hardcoded Q40/Q41-style assumptions."
-            status="Not implemented."
-            gaps={[
-              'template and catalog contracts',
-              'campaign preview',
-              'campaign creation',
-              'campaign run expansion',
-              'campaign progress and comparison',
-            ]}
-          />
-          <PlannedSurface
-            title="Registry Authorization"
-            why="Adding, deleting, promoting, activating, or replacing registry models and candidates must always be authorized through Backoffice, even if automation proposes the change."
-            status="Registry is read-only today."
-            gaps={[
-              'pending registry actions',
-              'approval and rejection workflow',
-              'audit log',
-              'authorized backend proxy mutations',
-              'automation proposals requiring admin approval',
-            ]}
-          />
-          <PlannedSurface
-            title="Backend Contract Inventory"
-            href="/contracts"
-            why="Operators need one place to see which backend contracts exist, which are missing, and which control-plane capabilities are blocked."
-            status="Workspace exists at /contracts as a Backoffice-owned inventory until backend metadata exists."
-            gaps={[
-              'backend contract metadata endpoint',
-              'Backoffice-maintained static gap inventory until backend supports metadata',
-            ]}
-          />
-        </div>
+        <section className="card">
+          <div className="split-row">
+            <h2>Live feed</h2>
+            <span className="small">{watchlistRows.length ? `${watchlistRows.length} watchlist rows reachable` : 'watchlist unavailable or empty'}</span>
+          </div>
+          {feed.length ? (
+            <div className="feed-list">
+              {feed.slice(0, 12).map((item, index) => (
+                <FeedRow item={item} key={`${item.text}-${item.at ?? index}`} />
+              ))}
+            </div>
+          ) : (
+            <p className="small">No recent activity - check backend health.</p>
+          )}
+        </section>
       </div>
     </div>
   )
 }
 
-function OperationCard({
+function KpiTile({
   href,
-  title,
-  controls,
-  matters,
-  availabilityLabel,
-  availabilityStatus,
-  availabilityDetail,
-  gap,
+  label,
+  value,
+  unit,
+  sub,
+  tone,
 }: {
   href: string
-  title: string
-  controls: string
-  matters: string
-  availabilityLabel: string
-  availabilityStatus?: HealthState
-  availabilityDetail: string
-  gap?: string
+  label: string
+  value: string
+  unit?: string
+  sub: string
+  tone?: 'green' | 'amber' | 'red'
 }) {
   return (
-    <div className="operation-card">
-      <div>
-        <div className="section-link-eyebrow">{title}</div>
-        <h3>{title}</h3>
-      </div>
-      <div className="operation-copy">
-        <strong>Controls:</strong> {controls}
-      </div>
-      <div className="operation-copy">
-        <strong>Why it matters:</strong> {matters}
-      </div>
-      <div className="availability-box">
-        <div className="split-row">
-          <strong>{availabilityLabel}</strong>
-          <span className={statusTone(availabilityStatus)}>{availabilityStatus ?? 'not available yet'}</span>
-        </div>
-        <div className="small">{availabilityDetail}</div>
-      </div>
-      {gap ? <div className="gap-note"><strong>Gap:</strong> {gap}</div> : null}
-      <Link className="hero-link card-link" href={href}>Open {title}</Link>
-    </div>
+    <Link className="control-kpi-card" href={href}>
+      <label>{label}</label>
+      <div className="metric-value">{value}{unit ? <span className="metric-unit">{unit}</span> : null}</div>
+      <div className={tone ? `small text-${tone}` : 'small'}>{sub}</div>
+    </Link>
   )
 }
 
-function PlannedSurface({
-  title,
-  href,
-  why,
-  status,
-  gaps,
-}: {
-  title: string
-  href?: string
-  why: string
-  status: string
-  gaps: string[]
-}) {
-  return (
-    <div className="planned-surface">
-      <div className="split-row">
-        <h3>{title}</h3>
-        <span className="badge backend-gap">Backend gap</span>
-      </div>
-      <p className="small"><strong>Why needed:</strong> {why}</p>
-      <p className="small"><strong>Current status:</strong> {status}</p>
-      {href ? <Link className="text-link" href={href}>Open workspace</Link> : null}
-      <div className="small"><strong>Backend gaps likely needed later:</strong></div>
-      <ul className="plain-list small">
-        {gaps.map((gap) => (
-          <li key={gap}>{gap}</li>
-        ))}
-      </ul>
-    </div>
+function FeedRow({ item }: { item: FeedItem }) {
+  const content = (
+    <>
+      <span className={`feed-dot ${item.tone}`} />
+      <span>
+        {item.text}
+        <span className="feed-time">{item.at ? timeAgo(item.at) : '—'}</span>
+      </span>
+    </>
   )
+  return item.href ? <Link className="feed-row" href={item.href}>{content}</Link> : <div className="feed-row">{content}</div>
 }
 
-function findProbe(snapshot: BackofficeHealthSnapshot, label: string): RouteProbe | undefined {
-  return snapshot.routeChecks.find((probe) => probe.label === label)
+function buildActions(
+  staleSources: SourceGap[],
+  experiments: Record<string, unknown>[],
+  failedJobs: Record<string, unknown>[],
+  candidates: Record<string, unknown>[]
+): Action[] {
+  const actions: Action[] = []
+  const stale = staleSources[0]
+  if (stale) {
+    actions.push({
+      text: `${stale.source} missing ${stale.missingDays}d of data`,
+      href: `/data?source=${encodeURIComponent(stale.source)}#rebuild`,
+      sub: `Source: ${stale.source}`,
+    })
+  }
+
+  const completedWithNoCandidate = experiments.find((row) => readLower(row, ['status', 'state']) === 'completed' && !readText(row, ['candidate_id', 'candidateId']))
+  if (completedWithNoCandidate) {
+    const id = readText(completedWithNoCandidate, ['experiment_id', 'id']) || 'experiment'
+    actions.push({
+      text: `${truncateId(id, 14)} completed with no candidate output`,
+      href: '/research',
+      sub: `Run finished ${timeAgo(readText(completedWithNoCandidate, ['completed_at', 'finished_at', 'updated_at']))}`,
+    })
+  }
+
+  const failedJob = failedJobs[0]
+  if (failedJob) {
+    actions.push({
+      text: `${readText(failedJob, ['name', 'analysis_type', 'job_id', 'id']) || 'Job'} failed`,
+      href: '/operations',
+      sub: timeAgo(readText(failedJob, ['failed_at', 'finished_at', 'updated_at', 'created_at'])),
+    })
+  }
+
+  const partialCandidate = candidates.find((row) => hasEvidence(row, ['equity', 'equity_curve']) && hasEvidence(row, ['drawdown']) && !hasEvidence(row, ['ic', 'ic_mean', 'ic_latest']))
+  if (partialCandidate) {
+    const id = readText(partialCandidate, ['candidate_id', 'id']) || 'candidate'
+    actions.push({
+      text: `${truncateId(id, 14)} is promo-ready but IC evidence missing`,
+      href: '/signals',
+      sub: 'All other gates pass',
+    })
+  }
+
+  return actions
 }
 
-function worstStatus(statuses: Array<HealthState | undefined>): HealthState | undefined {
-  if (statuses.includes('unreachable')) return 'unreachable'
-  if (statuses.includes('missing')) return 'missing'
-  if (statuses.includes('reachable')) return 'reachable'
-  if (statuses.includes('configured')) return 'configured'
-  return undefined
+function buildFeed(
+  experiments: Record<string, unknown>[],
+  jobs: Record<string, unknown>[],
+  signalHistory: Record<string, unknown>[],
+  rebuildJobs: Record<string, unknown>[]
+): FeedItem[] {
+  const items: FeedItem[] = [
+    ...experiments.map((row) => ({
+      text: `Experiment ${truncateId(readText(row, ['experiment_id', 'id']) || 'unknown', 12)} ${readText(row, ['status', 'state']) || 'updated'}`,
+      href: '/research',
+      at: readText(row, ['updated_at', 'completed_at', 'created_at']),
+      tone: toneForStatus(readLower(row, ['status', 'state'])),
+    })),
+    ...jobs.map((row) => ({
+      text: `Analyst job ${truncateId(readText(row, ['job_id', 'id']) || 'unknown', 12)} ${readText(row, ['status', 'state']) || 'updated'}`,
+      href: '/operations',
+      at: readText(row, ['updated_at', 'finished_at', 'created_at']),
+      tone: toneForStatus(readLower(row, ['status', 'state'])),
+    })),
+    ...rebuildJobs.map((row) => ({
+      text: `Data rebuild ${truncateId(readText(row, ['job_id', 'id']) || 'unknown', 12)} ${readText(row, ['status', 'state']) || 'updated'}`,
+      href: '/data#rebuild',
+      at: readText(row, ['updated_at', 'finished_at', 'created_at']),
+      tone: toneForStatus(readLower(row, ['status', 'state'])),
+    })),
+    ...signalHistory.map((row) => ({
+      text: `Signal ${readText(row, ['ticker', 'symbol']) || 'SPY'} ${readText(row, ['direction', 'signal', 'stance']) || 'updated'}`,
+      href: '/signals',
+      at: readText(row, ['signal_date', 'date', 'updated_at']),
+      tone: 'blue' as const,
+    })),
+  ]
+
+  return items
+    .filter((item) => item.text.trim())
+    .sort((a, b) => new Date(b.at ?? 0).getTime() - new Date(a.at ?? 0).getTime())
 }
 
-function statusTone(status?: HealthState): string {
-  if (status === 'reachable') return 'badge completed'
-  if (status === 'configured') return 'badge queued'
-  if (status === 'missing') return 'badge cancelled'
-  if (status === 'unreachable') return 'badge failed'
-  return 'badge backend-gap'
+type SourceGap = {
+  source: string
+  missingDays: number
+}
+
+function staleSourceRows(payload: unknown): SourceGap[] {
+  const summaries = isRecord(payload) && isRecord(payload.summaries) ? payload.summaries : {}
+  return Object.entries(summaries).map(([source, summary]) => ({
+    source,
+    missingDays: Number(isRecord(summary) ? summary.missing_days ?? 0 : 0),
+  })).filter((row) => row.missingDays > 0).sort((a, b) => b.missingDays - a.missingDays)
+}
+
+function dataCoverage(payload: unknown): number | null {
+  const rows = itemsOf(payload, ['rows'])
+  const statuses = rows.flatMap((row) => Object.values(isRecord(row.domains) ? row.domains : {}).map((cell) => readLower(cell, ['status'])))
+  if (!statuses.length) return null
+  const ok = statuses.filter((status) => status === 'ok').length
+  return Math.round((ok / statuses.length) * 100)
+}
+
+function isPromoReady(row: Record<string, unknown>): boolean {
+  const status = readLower(row, ['status', 'overall_status', 'readiness_status'])
+  return ['promo_ready', 'promotion_ready', 'approved', 'ready'].includes(status)
+}
+
+function hasEvidence(row: Record<string, unknown>, keys: string[]): boolean {
+  const metrics = isRecord(row.metrics) ? row.metrics : {}
+  const flat = { ...row, ...metrics }
+  return keys.some((key) => flat[key] !== null && flat[key] !== undefined && flat[key] !== '')
+}
+
+function payloadOf(result: SettledFetch): unknown {
+  return result.status === 'fulfilled' && result.value.upstream.ok ? result.value.payload : null
+}
+
+function itemsOf(payload: unknown, keys: string[]): Record<string, unknown>[] {
+  if (Array.isArray(payload)) return payload.filter(isRecord)
+  if (!isRecord(payload)) return []
+  for (const key of keys) {
+    const value = payload[key]
+    if (Array.isArray(value)) return value.filter(isRecord)
+  }
+  return []
+}
+
+function readText(row: unknown, keys: string[]): string {
+  if (!isRecord(row)) return ''
+  for (const key of keys) {
+    const value = row[key]
+    if (typeof value === 'string' && value.trim()) return value
+    if (typeof value === 'number') return String(value)
+  }
+  return ''
+}
+
+function readLower(row: unknown, keys: string[]): string {
+  return readText(row, keys).trim().toLowerCase()
+}
+
+function toneForStatus(status: string): FeedItem['tone'] {
+  if (status === 'failed' || status === 'error') return 'red'
+  if (status === 'queued' || status === 'running' || status === 'started') return 'amber'
+  if (status === 'completed' || status === 'ok' || status === 'succeeded') return 'green'
+  return 'blue'
+}
+
+function shiftIsoDays(days: number): string {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }

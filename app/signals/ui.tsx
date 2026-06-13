@@ -170,10 +170,16 @@ const COMPARISON_COLUMNS = [
   'Action / detail',
 ]
 
-const CHART_SERIES = [
+const PRIMARY_CHART_SERIES = [
   'equity_curve',
   'drawdown',
   'turnover',
+] as const
+
+type PrimaryChartSeries = typeof PRIMARY_CHART_SERIES[number]
+
+const CHART_SERIES = [
+  ...PRIMARY_CHART_SERIES,
   'ic_evolution',
   'rolling_ic',
   'cumulative_ic',
@@ -215,6 +221,7 @@ export default function SignalsWorkspace({ adminEmail }: { adminEmail: string })
   const [monitorError, setMonitorError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reportError, setReportError] = useState<string | null>(null)
+  const [activeChartSeries, setActiveChartSeries] = useState<PrimaryChartSeries>('equity_curve')
 
   const tickers = useMemo(() => parseTickers(tickerText), [tickerText])
   const selectedHistoryTicker = historyTicker.trim().toUpperCase() || tickers[0] || 'SPY'
@@ -448,11 +455,7 @@ export default function SignalsWorkspace({ adminEmail }: { adminEmail: string })
           <h2>Backend report series</h2>
           <p className="small">Charts use report.series.* from Signal Evaluation V1. Empty panels render backend-provided series gaps.</p>
           <ApiErrorBox error={reportError} />
-          <div className="chart-grid">
-            {CHART_SERIES.map((seriesKey) => (
-              <ChartPanel key={seriesKey} seriesKey={seriesKey} report={selectedReport} />
-            ))}
-          </div>
+          <ChartTabs activeSeries={activeChartSeries} onSelect={setActiveChartSeries} report={selectedReport} />
         </div>
         <SelectedDetailPanel
           loading={reportLoading}
@@ -595,6 +598,36 @@ function ComparisonTable({
   )
 }
 
+function ChartTabs({
+  activeSeries,
+  onSelect,
+  report,
+}: {
+  activeSeries: PrimaryChartSeries
+  onSelect: (series: PrimaryChartSeries) => void
+  report: SignalEvaluationReport | null
+}) {
+  return (
+    <div className="chart-tabs">
+      <div className="chart-tab-list" role="tablist" aria-label="Primary evidence charts">
+        {PRIMARY_CHART_SERIES.map((seriesKey) => (
+          <button
+            aria-selected={activeSeries === seriesKey}
+            className={activeSeries === seriesKey ? 'chart-tab active' : 'chart-tab'}
+            key={seriesKey}
+            onClick={() => onSelect(seriesKey)}
+            role="tab"
+            type="button"
+          >
+            {labelFromKey(seriesKey)}
+          </button>
+        ))}
+      </div>
+      <ChartPanel seriesKey={activeSeries} report={report} />
+    </div>
+  )
+}
+
 function ChartPanel({ seriesKey, report }: { seriesKey: string; report: SignalEvaluationReport | null }) {
   const series = report?.series?.[seriesKey]
   const points = Array.isArray(series?.points) ? series.points : []
@@ -675,7 +708,7 @@ function SelectedDetailPanel({
   return (
     <div className="card detail-panel">
       <p className="eyebrow">Selected Signal / Model Detail</p>
-      <h2>{candidate.display_name ?? candidate.candidate_id}</h2>
+      <h2>{candidate.display_name ?? 'Selected candidate'}</h2>
       {loading ? <p className="small">Loading report...</p> : null}
       <div className="field-grid">
         <DetailField label="Candidate ID" value={candidate.candidate_id} copy />

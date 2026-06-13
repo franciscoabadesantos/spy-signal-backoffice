@@ -218,7 +218,7 @@ function deriveGapIssues(health: HealthResponse | null): GapIssue[] {
   return issues.sort((a, b) => b.missingDays - a.missingDays)
 }
 
-export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
+export default function DataOpsConsole({ adminEmail, initialDomain }: { adminEmail: string; initialDomain?: string }) {
   const [jobs, setJobs] = useState<DataOpsJob[]>([])
   const [currentJob, setCurrentJob] = useState<DataOpsJob | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -236,7 +236,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
   const [healthTicker, setHealthTicker] = useState('')
   const [healthDomains, setHealthDomains] = useState<DataOpsDomain[]>(['market', 'macro', 'release-calendar'])
 
-  const [domain, setDomain] = useState<DataOpsDomain>('market')
+  const [domain, setDomain] = useState<DataOpsDomain>(normalizeDomain(initialDomain))
   const [mode, setMode] = useState<RebuildMode>('rebuild_missing_only')
   const [scopeType, setScopeType] = useState<ScopeType>('whole_domain')
   const [scopeRegion, setScopeRegion] = useState('us')
@@ -451,7 +451,7 @@ export default function DataOpsConsole({ adminEmail }: { adminEmail: string }) {
 
   return (
     <div className="page-stack">
-      <div className="card">
+      <div className="card" id="rebuild">
         <div className="split-row">
           <div>
             <h2>Data Quality</h2>
@@ -970,4 +970,8 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
       <div className="field-value">{value}</div>
     </div>
   )
+}
+
+function normalizeDomain(value?: string): DataOpsDomain {
+  return DOMAIN_OPTIONS.includes(value as DataOpsDomain) ? value as DataOpsDomain : 'market'
 }
