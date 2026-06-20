@@ -65,6 +65,18 @@ type CoverageResponse = {
   }
   days: CoverageDay[]
   missing_ranges: MissingRange[]
+  period_gaps?: Array<{
+    after_date: string
+    before_date: string
+    gap_days: number
+    missing_estimate: number
+  }>
+  period_summary?: {
+    count: number
+    first_date: string
+    last_date: string
+    gap_count: number
+  } | null
 }
 
 type Props = {
@@ -294,17 +306,23 @@ export default function DataWorkspace({ adminEmail, initialDomain, initialEntity
 
               {coverageError ? <ContractError endpoint="/analyst/data-ops/coverage" error={coverageError} /> : null}
 
-              <CoverageSummary coverage={visibleCoverage} loading={coverageLoading} />
-              <MonthCalendar coverage={visibleCoverage} month={month} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
-              <RepairDrawer
-                coverage={visibleCoverage}
-                selected={selected}
-                selectedDay={selectedDay}
-                repairError={repairError}
-                repairState={repairState}
-                onClose={() => setSelectedDay(null)}
-                onDryRun={() => void submitDryRunRepair(selected, selectedDay, visibleCoverage, setRepairState, setRepairError)}
-              />
+              {isEventDomain(selected.domain) ? (
+                <EventCoverageView coverage={visibleCoverage} loading={coverageLoading} />
+              ) : (
+                <>
+                  <CoverageSummary coverage={visibleCoverage} loading={coverageLoading} />
+                  <MonthCalendar coverage={visibleCoverage} month={month} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
+                  <RepairDrawer
+                    coverage={visibleCoverage}
+                    selected={selected}
+                    selectedDay={selectedDay}
+                    repairError={repairError}
+                    repairState={repairState}
+                    onClose={() => setSelectedDay(null)}
+                    onDryRun={() => void submitDryRunRepair(selected, selectedDay, visibleCoverage, setRepairState, setRepairError)}
+                  />
+                </>
+              )}
             </>
           ) : (
             <div className="empty-state">Select an inventory row to inspect month coverage.</div>
@@ -346,6 +364,56 @@ function CoverageSummary({ coverage, loading }: { coverage: CoverageResponse | n
         <strong>{statusLabel(coverage.summary.status)}</strong>
         <span className="small">{coverage.summary.reason ?? coverage.expected_calendar}</span>
       </div>
+    </div>
+  )
+}
+
+function EventCoverageView({ coverage, loading }: { coverage: CoverageResponse | null; loading: boolean }) {
+  if (loading) return <div className="coverage-summary loading">Loading period coverage...</div>
+  if (!coverage) return <div className="coverage-summary">Coverage has not loaded.</div>
+
+  const summary = coverage.period_summary ?? null
+  const gaps = coverage.period_gaps ?? []
+
+  return (
+    <div className="coverage-summary" style={{ display: 'block' }}>
+      <p className="small">
+        Event-based dataset (quarterly periods) - coverage is shown by period, not by calendar day.
+      </p>
+      {summary ? (
+        <p>
+          <strong>{summary.count}</strong> periods on record | {summary.first_date} to {summary.last_date} |{' '}
+          <strong>{summary.gap_count}</strong> probable gap(s)
+        </p>
+      ) : (
+        <p className="small">No periods on record for this entity.</p>
+      )}
+      {gaps.length > 0 ? (
+        <div className="table-wrap">
+          <table className="registry-table">
+            <thead>
+              <tr>
+                <th>After</th>
+                <th>Before</th>
+                <th>Gap (days)</th>
+                <th>~Missing periods</th>
+              </tr>
+            </thead>
+            <tbody>
+              {gaps.map((gap) => (
+                <tr key={`${gap.after_date}-${gap.before_date}`}>
+                  <td>{gap.after_date}</td>
+                  <td>{gap.before_date}</td>
+                  <td>{gap.gap_days}</td>
+                  <td>{gap.missing_estimate}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="small">No suspicious gaps detected between consecutive periods.</p>
+      )}
     </div>
   )
 }
@@ -532,6 +600,10 @@ function coverageMatchesSelectionAndMonth(coverage: CoverageResponse | null, sel
     coverage.start_date === startDate &&
     coverage.end_date === endDate
   )
+}
+
+function isEventDomain(domain: string): boolean {
+  return domain === 'fundamentals' || domain === 'earnings'
 }
 
 function normalizeDomain(value?: string): DataDomain | null {
