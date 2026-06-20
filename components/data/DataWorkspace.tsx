@@ -312,6 +312,9 @@ export default function DataWorkspace({ adminEmail, initialDomain, initialEntity
                 <>
                   <CoverageSummary coverage={visibleCoverage} loading={coverageLoading} />
                   <MonthCalendar coverage={visibleCoverage} month={month} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
+                  {isDailyScanDomain(selected.domain) ? (
+                    <GapScanPanel key={`${selected.domain}-${selected.entity_key}`} selected={selected} />
+                  ) : null}
                   <RepairDrawer
                     coverage={visibleCoverage}
                     selected={selected}
@@ -414,6 +417,68 @@ function EventCoverageView({ coverage, loading }: { coverage: CoverageResponse |
       ) : (
         <p className="small">No suspicious gaps detected between consecutive periods.</p>
       )}
+    </div>
+  )
+}
+
+function GapScanPanel({ selected }: { selected: { domain: string; entity_key: string } }) {
+  const [scan, setScan] = useState<CoverageResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+
+  async function runScan() {
+    setLoading(true)
+    setError(null)
+    try {
+      const query = new URLSearchParams({ domain: selected.domain, entity_key: selected.entity_key })
+      const payload = await requestClientJson(`/api/data-ops/coverage-gaps?${query.toString()}`) as CoverageResponse
+      setScan(payload)
+    } catch (err) {
+      setError(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="coverage-summary" style={{ display: 'block' }}>
+      <button className="secondary" type="button" onClick={() => void runScan()} disabled={loading}>
+        {loading ? 'Scanning full history...' : 'Scan full history for gaps'}
+      </button>
+      {error ? <ContractError endpoint="/analyst/data-ops/coverage-gaps" error={error} /> : null}
+      {scan ? (
+        <>
+          <p className="small">
+            Scanned {scan.start_date || '-'} to {scan.end_date} |{' '}
+            {scan.summary.coverage_pct === null ? 'Unknown' : `${scan.summary.coverage_pct}%`} covered |{' '}
+            <strong>{scan.missing_ranges.length}</strong> gap(s)
+          </p>
+          {scan.missing_ranges.length > 0 ? (
+            <div className="table-wrap">
+              <table className="registry-table">
+                <thead>
+                  <tr>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Missing days</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scan.missing_ranges.map((range) => (
+                    <tr key={`${range.start_date}-${range.end_date}`}>
+                      <td>{range.start_date}</td>
+                      <td>{range.end_date}</td>
+                      <td>{range.missing_days}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="small">No gaps found across full history.</p>
+          )}
+        </>
+      ) : null}
     </div>
   )
 }
@@ -604,6 +669,10 @@ function coverageMatchesSelectionAndMonth(coverage: CoverageResponse | null, sel
 
 function isEventDomain(domain: string): boolean {
   return domain === 'fundamentals' || domain === 'earnings'
+}
+
+function isDailyScanDomain(domain: string): boolean {
+  return domain === 'market' || domain === 'macro'
 }
 
 function normalizeDomain(value?: string): DataDomain | null {
