@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import * as assert from 'node:assert'
-import { GET as activePointersGet } from '../app/api/registry/active-pointers/route'
+import { GET as activePointersGet, POST as activePointersPost } from '../app/api/registry/active-pointers/route'
 import { GET as bundlesGet } from '../app/api/registry/bundles/route'
 import { GET as bundleDetailGet } from '../app/api/registry/bundles/[bundleId]/route'
 import { GET as candidatesGet } from '../app/api/registry/candidates/route'
@@ -20,6 +20,7 @@ describe('Registry Proxy Routes', () => {
     assert.strictEqual(typeof bundleDetailGet, 'function')
     assert.strictEqual(typeof promotionEventsGet, 'function')
     assert.strictEqual(typeof activePointersGet, 'function')
+    assert.strictEqual(typeof activePointersPost, 'function')
     assert.strictEqual(typeof evidenceGet, 'function')
   })
 })

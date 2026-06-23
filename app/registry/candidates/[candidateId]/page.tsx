@@ -42,7 +42,7 @@ export default async function CandidateDetailPage({ params }: CandidateDetailPag
       {!error && candidateDetail && lineage ? (
         <>
           <CandidateOverview candidate={candidateDetail.candidate} />
-          <PromotionAction adminEmail={admin.email} candidate={candidateDetail.candidate} />
+          <PromotionAction adminEmail={admin.email} bundles={lineage.bundles} candidate={candidateDetail.candidate} />
           <JsonSection title="Research Artifact Evidence" value={candidateDetail.research_artifact_evidence} />
           <JsonSection title="Current Contract Evidence" value={readinessPayload?.current_contract_evidence} />
           <LineageView lineage={lineage} />
