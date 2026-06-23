@@ -57,6 +57,7 @@ export default async function RegistryPage({ searchParams }: RegistryPageProps) 
               </div>
               <div className="meta">
                 <Link href="/registry/promotions" className="text-link">Promotion history</Link>
+                <Link href="/registry/monitoring" className="text-link">Monitoring</Link>
               </div>
             </div>
           </div>

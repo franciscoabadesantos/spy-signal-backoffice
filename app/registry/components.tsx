@@ -203,8 +203,22 @@ export function CandidateOverview({ candidate }: { candidate: CandidateRecord })
           ['source_feature_snapshot_name', candidate.source_feature_snapshot_name],
           ['source_feature_snapshot_version', candidate.source_feature_snapshot_version],
           ['source_prediction_panel_id', candidate.source_prediction_panel_id],
+          ['batch_id', candidate.batch_id],
+          ['rank_ic', candidate.rank_ic],
+          ['rank_ic_ir', candidate.rank_ic_ir],
+          ['top_bottom_spread', candidate.top_bottom_spread],
+          ['mcpt_p_value', candidate.mcpt_p_value],
           ['notes', candidate.notes],
         ]}
+      />
+      <CrossSectionalEvidenceCard
+        title="Cross-Sectional Promotion Evidence"
+        rankIc={candidate.rank_ic}
+        rankIcIr={candidate.rank_ic_ir}
+        topBottomSpread={candidate.top_bottom_spread}
+        mcptPValue={candidate.mcpt_p_value}
+        batchId={candidate.batch_id}
+        selectionSummary={candidate.selection_summary_json}
       />
       <JsonSection title="Metrics Summary" value={candidate.metrics_summary_json} />
       <JsonSection title="Robustness Summary" value={candidate.robustness_summary_json} />
@@ -355,8 +369,22 @@ export function ReadinessReportDetail({ report }: { report: ReadinessReport }) {
           ['policy_id', report.policy_id],
           ['policy_version', report.policy_version],
           ['overall_status', report.overall_status],
+          ['batch_id', report.batch_id],
+          ['rank_ic', report.rank_ic],
+          ['rank_ic_ir', report.rank_ic_ir],
+          ['top_bottom_spread', report.top_bottom_spread],
+          ['mcpt_p_value', report.mcpt_p_value],
           ['created_at', report.created_at],
         ]}
+      />
+      <CrossSectionalEvidenceCard
+        title="Cross-Sectional Readiness Evidence"
+        rankIc={report.rank_ic}
+        rankIcIr={report.rank_ic_ir}
+        topBottomSpread={report.top_bottom_spread}
+        mcptPValue={report.mcpt_p_value}
+        batchId={report.batch_id}
+        selectionSummary={report.selection_summary_json}
       />
       <JsonSection title="Checks Passed" value={report.checks_passed} />
       <JsonSection title="Checks Warned" value={report.checks_warned} />
@@ -420,6 +448,44 @@ export function JsonSection({ title, value }: { title: string; value: unknown })
     <div style={{ marginTop: 16 }}>
       <h4>{title}</h4>
       <JsonBlock value={value} />
+    </div>
+  )
+}
+
+function CrossSectionalEvidenceCard({
+  title,
+  rankIc,
+  rankIcIr,
+  topBottomSpread,
+  mcptPValue,
+  batchId,
+  selectionSummary,
+}: {
+  title: string
+  rankIc: unknown
+  rankIcIr: unknown
+  topBottomSpread: unknown
+  mcptPValue: unknown
+  batchId: unknown
+  selectionSummary: unknown
+}) {
+  const hasEvidence = [rankIc, rankIcIr, topBottomSpread, mcptPValue, batchId, selectionSummary].some(
+    (value) => value !== null && value !== undefined && value !== ''
+  )
+  if (!hasEvidence) return null
+  return (
+    <div className="card compact-card" style={{ marginTop: 16 }}>
+      <h4>{title}</h4>
+      <FieldGrid
+        fields={[
+          ['batch_id', batchId],
+          ['rank_ic', rankIc],
+          ['rank_ic_ir', rankIcIr],
+          ['top_bottom_spread', topBottomSpread],
+          ['mcpt_p_value', mcptPValue],
+        ]}
+      />
+      <JsonSection title="Selection Summary" value={selectionSummary} />
     </div>
   )
 }

@@ -23,6 +23,12 @@ export type CandidateRecord = {
   metrics_summary_json?: JsonValue
   robustness_summary_json?: JsonValue
   approval_summary_json?: JsonValue
+  rank_ic?: number | string | null
+  rank_ic_ir?: number | string | null
+  top_bottom_spread?: number | string | null
+  mcpt_p_value?: number | string | null
+  selection_summary_json?: JsonValue
+  batch_id?: string | null
   notes?: string | null
   [key: string]: unknown
 }
@@ -86,6 +92,12 @@ export type ReadinessReport = {
   missing_evidence?: JsonValue[]
   metric_evidence?: JsonValue
   artifact_evidence?: JsonValue
+  rank_ic?: number | string | null
+  rank_ic_ir?: number | string | null
+  top_bottom_spread?: number | string | null
+  mcpt_p_value?: number | string | null
+  selection_summary_json?: JsonValue
+  batch_id?: string | null
   created_at?: string | null
   [key: string]: unknown
 }
