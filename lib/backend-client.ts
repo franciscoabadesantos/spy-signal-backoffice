@@ -51,6 +51,10 @@ export function backendServiceTokenConfigured(): boolean {
   return Boolean(backendServiceToken(false))
 }
 
+export function backendSharedSecret(): string {
+  return (process.env.BACKEND_SHARED_SECRET || '').trim()
+}
+
 export function cloudflareAccessHeaders(): HeadersInit {
   const clientId = (process.env.CF_ACCESS_CLIENT_ID || '').trim()
   const clientSecret = (process.env.CF_ACCESS_CLIENT_SECRET || '').trim()
@@ -97,6 +101,13 @@ export function backendHeaders({
   const token = backendServiceToken(requireBackendServiceToken)
   if (token) {
     headers.Authorization = `Bearer ${token}`
+  }
+
+  // Signal/ticker/site backend routes are gated by the shared secret (not the
+  // bearer service token). Send both; each backend route validates its own.
+  const sharedSecret = backendSharedSecret()
+  if (sharedSecret) {
+    headers['x-backend-shared-secret'] = sharedSecret
   }
 
   if (includeCloudflareAccess) {
