@@ -95,18 +95,14 @@ export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = f
     {
       label: 'EVALUATION',
       items: [
-        { label: 'Candidates', href: '/evaluation', dot: sidebarHealth.evaluation, badge: sidebarCandidateCount },
-        { label: 'Compare', href: '/evaluation#compare', dot: sidebarHealth.evaluation },
-        { label: 'Promote', href: '/evaluation#promote', dot: sidebarHealth.evaluation },
+        { label: 'Evaluation', href: '/evaluation', dot: sidebarHealth.evaluation, badge: sidebarCandidateCount },
       ],
     },
     {
       label: 'PRODUCTION',
       items: [
-        { label: 'Active models', href: '/production', dot: sidebarHealth.production },
+        { label: 'Production', href: '/production', dot: sidebarHealth.production },
         { label: 'Daily inference', href: '/production/daily-inference', dot: sidebarHealth.production },
-        { label: 'Live panel', href: '/production#live-panel', dot: sidebarHealth.production },
-        { label: 'Monitoring', href: '/production#monitoring', dot: sidebarHealth.production },
       ],
     },
     {

@@ -9,11 +9,11 @@ export default async function DailyInferencePage() {
       <div className="card">
         <div className="split-row">
           <div>
-            <h1>Daily Inference Monitor</h1>
+            <h1>Production Daily Inference</h1>
             <p className="small">Production job visibility per active pointer and date.</p>
           </div>
           <div className="meta">
-            <Link href="/operations" className="text-link">Operations</Link>
+            <Link href="/production" className="text-link">Production</Link>
             <span className="small">Admin: {admin.email}</span>
           </div>
         </div>

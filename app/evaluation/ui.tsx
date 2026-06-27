@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
 import { formatDate } from '@/lib/format'
-import { ApiErrorBox, EmptyState, EvidenceGap, JsonBlock, asRecord, readArrayPayload } from '@/app/components/workspace-data'
+import { ApiErrorBox, EvidenceGap, JsonBlock, asRecord, readArrayPayload } from '@/app/components/workspace-data'
 import { CopyableId } from '@/components/ui/CopyableId'
 
 type SourceFilter = 'all' | 'official' | 'research' | 'registry' | 'user' | 'paper' | 'unknown'
@@ -142,7 +142,7 @@ function initialCandidateParam(): string | null {
   return value?.trim() || null
 }
 
-export default function SignalsWorkspace({ adminEmail }: { adminEmail: string }) {
+export default function EvaluationWorkspace({ adminEmail }: { adminEmail: string }) {
   const [search, setSearch] = useState('')
   const [evaluationList, setEvaluationList] = useState<SignalEvaluationListResponse>({ candidates: [], sources: {}, gaps: [] })
   const [monitor, setMonitor] = useState<MonitorState>({ history: [], lastFlips: {}, flips: [] })
@@ -258,7 +258,11 @@ export default function SignalsWorkspace({ adminEmail }: { adminEmail: string })
             <h1>Evaluation</h1>
             <p className="small">Analyze candidate evidence, compare alternatives, and promote models from the same workspace.</p>
           </div>
-          <div className="small">Admin: {adminEmail}</div>
+          <div className="meta">
+            <Link className="text-link" href="#compare">Compare</Link>
+            <Link className="text-link" href="#promote">Promote</Link>
+            <span className="small">Admin: {adminEmail}</span>
+          </div>
         </div>
       </div>
 
@@ -333,10 +337,10 @@ function CandidateList({
   }
 
   return (
-    <aside className="workspace-column" style={{ borderRight: '1px solid #e2e8f0', background: '#f8fafc' }}>
-      <div style={{ padding: 12, borderBottom: '1px solid #e2e8f0', display: 'grid', gap: 8 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-          <h2 style={{ margin: 0, fontSize: 14 }}>Candidates</h2>
+    <aside className="workspace-column evaluation-list-panel">
+      <div className="evaluation-list-header">
+        <div className="evaluation-list-title">
+          <h2>Candidates</h2>
           <span className="small">{loading ? 'Loading' : rows.length}</span>
         </div>
         <input
@@ -371,9 +375,9 @@ function CandidateList({
               className={selected ? 'candidate-row active' : 'candidate-row'}
               key={row.id}
             >
-              <strong style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.ticker}</strong>
-              <span style={{ display: 'grid', gap: 4, minWidth: 0 }}>
-                <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <strong className="candidate-ticker">{row.ticker}</strong>
+              <span className="candidate-main">
+                <span className="candidate-controls">
                   <input
                     aria-label={`Compare ${row.displayId}`}
                     checked={compareIds.includes(row.id)}
@@ -382,7 +386,6 @@ function CandidateList({
                       toggleCompare(row.id)
                     }}
                     onClick={(event) => event.stopPropagation()}
-                    style={{ width: 'auto' }}
                     type="checkbox"
                   />
                   <button className="candidate-select-button" onClick={() => onSelect(row.id)} title={row.id} type="button">
@@ -393,12 +396,12 @@ function CandidateList({
                   ))}
                 </span>
               </span>
-              <span style={{ justifySelf: 'end', fontFamily: 'IBM Plex Mono, SFMono-Regular, Consolas, monospace', fontSize: 12 }}>{row.sharpe}</span>
+              <span className="candidate-score">{row.sharpe}</span>
             </div>
           )
         })}
         {!loading && rows.length === 0 ? (
-          <div style={{ padding: 12 }}>
+          <div className="workspace-pane">
             <EvidenceGap
               reason={sourceFilter === 'user' ? 'User-built model candidates are reserved for a future backend contract.' : 'No candidates matched the current source and search filters.'}
               expected={sourceFilter === 'user' ? 'A future user candidate source on /analyst/signal-evaluation/candidates.' : 'Candidate rows from /analyst/signal-evaluation/candidates.'}
@@ -424,19 +427,20 @@ function ChartWorkspace({
 }) {
   return (
     <main className="workspace-column workspace-pane">
-      <div className="chart-tabs" style={{ marginBottom: 12 }} role="tablist" aria-label="Signal evidence charts">
-        {PRIMARY_CHART_SERIES.map((series) => (
-          <button
-            key={series}
-            aria-selected={activeSeries === series}
-            className={activeSeries === series ? 'primary' : 'secondary'}
-            onClick={() => setActiveSeries(series)}
-            role="tab"
-            type="button"
+      <div className="chart-selector-row">
+        <div>
+          <label htmlFor="evaluationSeries">Evidence series</label>
+          <select
+            id="evaluationSeries"
+            value={activeSeries}
+            onChange={(event) => setActiveSeries(event.target.value as PrimaryChartSeries)}
           >
-            {labelFromKey(series)}
-          </button>
-        ))}
+            {PRIMARY_CHART_SERIES.map((series) => (
+              <option key={series} value={series}>{labelFromKey(series)}</option>
+            ))}
+          </select>
+        </div>
+        <span className="small">{selectedRow ? selectedRow.displayId : 'Select a candidate'}</span>
       </div>
       <ChartPanel seriesKey={activeSeries} report={report} selectedRow={selectedRow} />
       {selectedRow ? <MetricsRow report={report} selectedRow={selectedRow} /> : null}
@@ -455,7 +459,7 @@ function ChartPanel({
 }) {
   if (!selectedRow) {
     return (
-      <section style={{ minWidth: 0, width: '100%', minHeight: 360, display: 'grid', alignContent: 'stretch' }}>
+      <section className="chart-panel">
         <SelectionPrompt />
       </section>
     )
@@ -467,11 +471,11 @@ function ChartPanel({
   const gap = gapForSeries(report, seriesKey)
 
   return (
-    <section style={{ minWidth: 0, width: '100%', minHeight: 360, display: 'grid', alignContent: 'stretch' }}>
+    <section className="chart-panel">
       {chartPoints.length > 0 ? (
         <MiniSeriesChart points={chartPoints} />
       ) : (
-        <div style={{ minHeight: 320, display: 'grid', placeItems: 'center' }}>
+        <div className="chart-empty">
           <EvidenceGap
             reason={gap?.message ?? 'The backend returned an empty series container for this candidate.'}
             expected={gap?.expected ?? labelFromKey(seriesKey)}
@@ -485,7 +489,7 @@ function ChartPanel({
 
 function SelectionPrompt() {
   return (
-    <div className="small" style={{ minHeight: 320, display: 'grid', placeItems: 'center', color: '#64748b', textAlign: 'center' }}>
+    <div className="small selection-prompt">
       Select a candidate from the list
     </div>
   )
@@ -514,7 +518,7 @@ function MiniSeriesChart({ points }: { points: ChartPoint[] }) {
   ]
 
   return (
-    <svg aria-label="Signal evidence chart" role="img" viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 320, display: 'block', border: '1px solid #e2e8f0', borderRadius: 8, background: '#fff' }}>
+    <svg aria-label="Signal evidence chart" className="mini-series-chart" role="img" viewBox={`0 0 ${width} ${height}`}>
       <line x1={margin.left} x2={margin.left} y1={margin.top} y2={margin.top + plotHeight} stroke="#94a3b8" />
       <line x1={margin.left} x2={margin.left + plotWidth} y1={margin.top + plotHeight} y2={margin.top + plotHeight} stroke="#94a3b8" />
       <text x={margin.left - 10} y={margin.top + 4} textAnchor="end" fill="#64748b" fontSize="11">{formatAxisValue(max)}</text>
@@ -540,16 +544,16 @@ function MetricsRow({ report, selectedRow }: { report: SignalEvaluationReport | 
   const metricsUnavailable = Boolean(report) && items.every(([, value]) => value === '—')
   return (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginTop: 12 }}>
+      <div className="evaluation-metric-grid">
         {items.map(([label, value]) => (
-          <div key={label} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, background: '#f8fafc' }}>
+          <div className="evaluation-metric-card" key={label}>
             <label>{label}</label>
-            <div style={{ fontFamily: 'IBM Plex Mono, SFMono-Regular, Consolas, monospace', fontSize: 14 }}>{value}</div>
+            <div>{value}</div>
           </div>
         ))}
       </div>
       {metricsUnavailable ? (
-        <div style={{ marginTop: 8 }}>
+        <div className="evaluation-gap-spacing">
           <EvidenceGap
             reason={gapForMetrics(report)?.message ?? 'Metrics are not present on this candidate report.'}
             expected={gapForMetrics(report)?.expected ?? 'metrics_summary_json and robustness_summary_json populated by backend evidence plumbing.'}
@@ -565,7 +569,7 @@ function MetricsRow({ report, selectedRow }: { report: SignalEvaluationReport | 
 function SelectedCandidatePanel({ adminEmail, loading, report, selectedRow }: { adminEmail: string; loading: boolean; report: SignalEvaluationReport | null; selectedRow: ComparisonRow | null }) {
   if (!selectedRow) {
     return (
-      <aside className="workspace-column" style={{ borderLeft: '1px solid #e2e8f0', padding: 12, display: 'grid', placeItems: 'center' }}>
+      <aside className="workspace-column evaluation-detail-empty">
         <SelectionPrompt />
       </aside>
     )
@@ -577,8 +581,8 @@ function SelectedCandidatePanel({ adminEmail, loading, report, selectedRow }: { 
   const missing = EVIDENCE_ITEMS.filter((item) => !evidence[item.key])
 
   return (
-    <aside className="workspace-column" style={{ borderLeft: '1px solid #e2e8f0', padding: 12, display: 'grid', gap: 14, alignContent: 'start' }}>
-      <div style={{ display: 'grid', gap: 8 }}>
+    <aside className="workspace-column evaluation-detail-panel">
+      <div className="evaluation-detail-stack">
         <CopyableId id={candidate.candidate_id} maxLen={candidate.candidate_id.length} />
         <div className="meta">
           <span className={`badge ${sourceBadgeClass(sourceFromType(candidate.source_type))}`}>{candidate.source_type}</span>
@@ -587,7 +591,7 @@ function SelectedCandidatePanel({ adminEmail, loading, report, selectedRow }: { 
         {loading ? <p className="small">Loading report...</p> : null}
       </div>
 
-      <div style={{ display: 'grid', gap: 8 }}>
+      <div className="evaluation-detail-stack">
         <DetailRow label="Ticker" value={selectedRow.ticker} />
         <DetailRow label="Horizon" value={candidate.horizon ?? '—'} />
         <DetailRow label="Scope" value={scopeText(candidate)} />
@@ -602,10 +606,10 @@ function SelectedCandidatePanel({ adminEmail, loading, report, selectedRow }: { 
       </div>
 
       <section>
-        <h3 style={{ fontSize: 13, margin: '0 0 8px' }}>Evidence</h3>
-        <div style={{ display: 'grid', gap: 6 }}>
+        <h3 className="evidence-heading">Evidence</h3>
+        <div className="evidence-list">
           {EVIDENCE_ITEMS.map((item) => (
-            <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12 }}>
+            <div className="evidence-row" key={item.key}>
               <span>{item.label}</span>
               <span aria-label={evidence[item.key] ? 'present' : 'missing'}>{evidence[item.key] ? '✓' : '○'}</span>
             </div>
@@ -613,7 +617,7 @@ function SelectedCandidatePanel({ adminEmail, loading, report, selectedRow }: { 
         </div>
       </section>
 
-      <div style={{ padding: 10, borderRadius: 8, border: `1px solid ${missing.length ? '#fde68a' : '#a7f3d0'}`, background: missing.length ? '#fffbeb' : '#ecfdf5', color: missing.length ? '#92400e' : '#065f46', fontSize: 12, fontWeight: 700 }}>
+      <div className={missing.length ? 'readiness-banner blocked' : 'readiness-banner ready'}>
         {missing.length ? `Blocked — ${missing.map((item) => item.label).join(', ')} missing` : 'Ready — all required evidence present'}
       </div>
 
@@ -626,8 +630,8 @@ function SelectedCandidatePanel({ adminEmail, loading, report, selectedRow }: { 
 
       <PromoteToEnvironment adminEmail={adminEmail} candidate={candidate} />
 
-      <details style={{ marginTop: 4 }}>
-        <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>Debug</summary>
+      <details className="debug-details">
+        <summary>Debug</summary>
         <JsonBlock value={{ report: report ?? {}, candidate: candidate ?? {} }} />
       </details>
     </aside>
@@ -636,9 +640,9 @@ function SelectedCandidatePanel({ adminEmail, loading, report, selectedRow }: { 
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
-      <label style={{ margin: 0 }}>{label}</label>
-      <div style={{ minWidth: 0, overflowWrap: 'anywhere', fontSize: 12 }}>{value}</div>
+    <div className="detail-field">
+      <label>{label}</label>
+      <div>{value}</div>
     </div>
   )
 }
@@ -734,7 +738,7 @@ function CompareWorkspace({ rows }: { rows: ComparisonRow[] }) {
               </div>
               <span className={`badge ${sourceBadgeClass(row.source)}`}>{row.sourceType}</span>
             </div>
-            <div className="field-grid" style={{ marginTop: 12 }}>
+            <div className="field-grid evaluation-summary-grid">
               <MetricField label="Sharpe" value={row.sharpe} />
               <MetricField label="Max DD" value={row.maxDrawdown} />
               <MetricField label="Annual return" value={row.annualReturn} />
@@ -763,7 +767,7 @@ function SummaryPanels({ report }: { report: SignalEvaluationReport }) {
   const robustnessSummary = report.robustness_summary_json
   if (!metricsSummary && !robustnessSummary) {
     return (
-      <div style={{ marginTop: 12 }}>
+      <div className="evaluation-summary-grid">
         <EvidenceGap
           reason={gapForMetrics(report)?.message ?? 'The report did not include metrics_summary_json or robustness_summary_json.'}
           expected={gapForMetrics(report)?.expected ?? 'Backend metrics and robustness summary evidence for this candidate.'}
@@ -774,7 +778,7 @@ function SummaryPanels({ report }: { report: SignalEvaluationReport }) {
   }
 
   return (
-    <div className="feature-grid" style={{ marginTop: 12 }}>
+    <div className="feature-grid evaluation-summary-grid">
       <SummaryCard title="Metrics summary" value={metricsSummary} />
       <SummaryCard title="Robustness summary" value={robustnessSummary} />
     </div>
@@ -866,9 +870,9 @@ function PromoteToEnvironment({ adminEmail, candidate }: { adminEmail: string; c
         <option value="paper">paper</option>
         <option value="production">production</option>
       </select>
-      <label htmlFor="promoteReason" style={{ marginTop: 8 }}>Reason</label>
+      <label className="evaluation-gap-spacing" htmlFor="promoteReason">Reason</label>
       <textarea id="promoteReason" rows={3} value={reason} onChange={(event) => setReason(event.target.value)} />
-      <label className="check-row" style={{ marginTop: 8 }}>
+      <label className="check-row evaluation-gap-spacing">
         <input checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} type="checkbox" />
         <span>confirmed: I reviewed the evidence and want to submit this promotion.</span>
       </label>
@@ -926,15 +930,8 @@ function EvidenceDot({ present, label }: { present: boolean; label: string }) {
   return (
     <span
       aria-label={`${label}: ${present ? 'present' : 'missing'}`}
+      className={present ? 'evidence-dot present' : 'evidence-dot'}
       title={`${label}: ${present ? 'present' : 'missing'}`}
-      style={{
-        display: 'inline-block',
-        width: 7,
-        height: 7,
-        borderRadius: 999,
-        border: '1px solid #64748b',
-        background: present ? '#0f172a' : 'transparent',
-      }}
     />
   )
 }

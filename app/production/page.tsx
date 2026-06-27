@@ -25,13 +25,16 @@ export default async function ProductionPage() {
 
   return (
     <div className="page-stack">
-      <div className="card" id="active-models">
+      <div className="card">
         <div className="split-row">
           <div>
             <h1>Production</h1>
             <p className="small">Active model pointers, promotion history, daily inference, live ranked panels, and monitoring.</p>
           </div>
           <div className="meta">
+            <Link className="text-link" href="#active-models">Active models</Link>
+            <Link className="text-link" href="#live-panel">Live panel</Link>
+            <Link className="text-link" href="#monitoring">Monitoring</Link>
             <Link className="text-link" href="/production/daily-inference">Daily inference</Link>
             <span className="small">Admin: {admin.email}</span>
           </div>
@@ -40,7 +43,7 @@ export default async function ProductionPage() {
 
       {error ? <RegistryErrorState error={error} /> : null}
 
-      <div className="card" id="promotion-history">
+      <div className="card" id="active-models">
         <h2>Active models</h2>
         {activePointers.length > 0 ? (
           <ActivePointerTable pointers={activePointers} />
@@ -53,7 +56,7 @@ export default async function ProductionPage() {
         )}
       </div>
 
-      <div className="card" id="live-panel">
+      <div className="card" id="promotion-history">
         <h2>Promotion history</h2>
         {promotionEvents.length > 0 ? (
           <PromotionEventList events={promotionEvents} />
@@ -66,13 +69,13 @@ export default async function ProductionPage() {
         )}
       </div>
 
-      <div className="card" id="monitoring">
+      <div className="card" id="live-panel">
         <h2>Live panel</h2>
         <p className="small">Ranked cross-sectional panel for the active production pointer.</p>
         <CrossSectionalSignalsWorkspace />
       </div>
 
-      <div className="card">
+      <div className="card" id="monitoring">
         <h2>Monitoring</h2>
         <RegistryMonitoringWorkspace adminEmail={admin.email} />
       </div>
