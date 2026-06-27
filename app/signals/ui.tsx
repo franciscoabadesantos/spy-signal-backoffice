@@ -5,11 +5,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
 import { formatDate } from '@/lib/format'
-import { ApiErrorBox, EmptyState, JsonBlock, asRecord, readArrayPayload } from '@/app/components/workspace-data'
+import { ApiErrorBox, EmptyState, EvidenceGap, JsonBlock, asRecord, readArrayPayload } from '@/app/components/workspace-data'
 import { CopyableId } from '@/components/ui/CopyableId'
 
-type SourceFilter = 'official' | 'research' | 'registry' | 'paper' | 'unknown'
-type PrimaryChartSeries = 'equity_curve' | 'drawdown' | 'turnover'
+type SourceFilter = 'all' | 'official' | 'research' | 'registry' | 'user' | 'paper' | 'unknown'
+type PrimaryChartSeries = 'equity_curve' | 'drawdown' | 'turnover' | 'ic_evolution' | 'rolling_ic' | 'cumulative_ic' | 'forward_returns' | 'signal_distribution' | 'confidence_calibration' | 'regime_breakdown' | 'decay_divergence'
 type EvidenceKey = 'equity' | 'drawdown' | 'turnover' | 'ic' | 'forward'
 
 type SignalEvaluationGap = {
@@ -106,7 +106,27 @@ type ChartPoint = {
   xLabel: string
 }
 
-const PRIMARY_CHART_SERIES: PrimaryChartSeries[] = ['equity_curve', 'drawdown', 'turnover']
+const SOURCE_TABS: Array<{ key: SourceFilter; label: string; disabled?: boolean }> = [
+  { key: 'all', label: 'all' },
+  { key: 'research', label: 'research' },
+  { key: 'registry', label: 'registry' },
+  { key: 'official', label: 'official' },
+  { key: 'user', label: 'user', disabled: true },
+]
+
+const PRIMARY_CHART_SERIES: PrimaryChartSeries[] = [
+  'equity_curve',
+  'drawdown',
+  'turnover',
+  'ic_evolution',
+  'rolling_ic',
+  'cumulative_ic',
+  'forward_returns',
+  'signal_distribution',
+  'confidence_calibration',
+  'regime_breakdown',
+  'decay_divergence',
+]
 
 const EVIDENCE_ITEMS: Array<{ key: EvidenceKey; label: string; short: string }> = [
   { key: 'equity', label: 'Equity curve', short: 'Eq' },
@@ -115,39 +135,6 @@ const EVIDENCE_ITEMS: Array<{ key: EvidenceKey; label: string; short: string }> 
   { key: 'ic', label: 'IC', short: 'IC' },
   { key: 'forward', label: 'Forward returns', short: 'Fw' },
 ]
-
-const signalPageStyle = {
-  display: 'grid',
-  gap: 16,
-  minWidth: 0,
-} satisfies React.CSSProperties
-
-const signalShellStyle = {
-  display: 'grid',
-  gridTemplateColumns: '260px minmax(0, 1fr) 220px',
-  minHeight: 620,
-  height: 'calc(100vh - 128px)',
-  minWidth: 0,
-  overflow: 'hidden',
-  border: '1px solid #dbe3f0',
-  borderRadius: 8,
-  background: '#fff',
-} satisfies React.CSSProperties
-
-const selectionPromptStyle = {
-  minHeight: 320,
-  display: 'grid',
-  placeItems: 'center',
-  color: '#64748b',
-  textAlign: 'center',
-} satisfies React.CSSProperties
-
-const columnStyle = {
-  minWidth: 0,
-  minHeight: 0,
-  overflowY: 'auto',
-  overflowX: 'hidden',
-} satisfies React.CSSProperties
 
 function initialCandidateParam(): string | null {
   if (typeof window === 'undefined') return null
@@ -162,6 +149,8 @@ export default function SignalsWorkspace({ adminEmail }: { adminEmail: string })
   const [selectedReport, setSelectedReport] = useState<SignalEvaluationReport | null>(null)
   const [selectedRowId, setSelectedRowId] = useState<string | null>(() => initialCandidateParam())
   const [activeChartSeries, setActiveChartSeries] = useState<PrimaryChartSeries>('equity_curve')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
+  const [compareIds, setCompareIds] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [reportLoading, setReportLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -173,12 +162,16 @@ export default function SignalsWorkspace({ adminEmail }: { adminEmail: string })
     [evaluationList.candidates]
   )
   const filteredRows = useMemo(
-    () => filterRows(comparisonRows, search),
-    [comparisonRows, search]
+    () => filterRows(comparisonRows, search).filter((row) => sourceFilter === 'all' || row.source === sourceFilter),
+    [comparisonRows, search, sourceFilter]
   )
   const selectedRow = useMemo(
     () => comparisonRows.find((row) => row.id === selectedRowId) ?? null,
     [comparisonRows, selectedRowId]
+  )
+  const compareRows = useMemo(
+    () => comparisonRows.filter((row) => compareIds.includes(row.id)).slice(0, 4),
+    [comparisonRows, compareIds]
   )
 
   async function loadEvaluation() {
@@ -258,18 +251,32 @@ export default function SignalsWorkspace({ adminEmail }: { adminEmail: string })
   }, [selectedRow?.id])
 
   return (
-    <div style={signalPageStyle}>
+    <div className="page-stack">
+      <div className="card">
+        <div className="split-row">
+          <div>
+            <h1>Evaluation</h1>
+            <p className="small">Analyze candidate evidence, compare alternatives, and promote models from the same workspace.</p>
+          </div>
+          <div className="small">Admin: {adminEmail}</div>
+        </div>
+      </div>
+
       <ApiErrorBox error={error} />
       <ApiErrorBox error={reportError} />
 
-      <section style={signalShellStyle} aria-label="Signals workspace">
+      <section className="workspace-shell" aria-label="Evaluation workspace">
         <CandidateList
+          compareIds={compareIds}
           loading={loading}
           rows={filteredRows}
           search={search}
           selectedReport={selectedReport}
           selectedRowId={selectedRow?.id ?? null}
+          setCompareIds={setCompareIds}
           setSearch={setSearch}
+          setSourceFilter={setSourceFilter}
+          sourceFilter={sourceFilter}
           onSelect={setSelectedRowId}
         />
         <ChartWorkspace
@@ -279,37 +286,54 @@ export default function SignalsWorkspace({ adminEmail }: { adminEmail: string })
           setActiveSeries={setActiveChartSeries}
         />
         <SelectedCandidatePanel
+          adminEmail={adminEmail}
           loading={reportLoading}
           report={selectedReport}
           selectedRow={selectedRow}
         />
       </section>
 
+      <CompareWorkspace rows={compareRows} />
       <SignalMonitor monitor={monitor} error={monitorError} selectedTicker={selectedRow?.ticker || 'SPY'} />
-      <div className="small">Admin: {adminEmail}</div>
     </div>
   )
 }
 
 function CandidateList({
+  compareIds,
   loading,
   rows,
   search,
   selectedReport,
   selectedRowId,
+  setCompareIds,
   setSearch,
+  setSourceFilter,
+  sourceFilter,
   onSelect,
 }: {
+  compareIds: string[]
   loading: boolean
   rows: ComparisonRow[]
   search: string
   selectedReport: SignalEvaluationReport | null
   selectedRowId: string | null
+  setCompareIds: (value: string[]) => void
   setSearch: (value: string) => void
+  setSourceFilter: (value: SourceFilter) => void
+  sourceFilter: SourceFilter
   onSelect: (rowId: string) => void
 }) {
+  function toggleCompare(rowId: string) {
+    if (compareIds.includes(rowId)) {
+      setCompareIds(compareIds.filter((id) => id !== rowId))
+      return
+    }
+    setCompareIds([...compareIds, rowId].slice(-4))
+  }
+
   return (
-    <aside style={{ ...columnStyle, borderRight: '1px solid #e2e8f0', background: '#f8fafc' }}>
+    <aside className="workspace-column" style={{ borderRight: '1px solid #e2e8f0', background: '#f8fafc' }}>
       <div style={{ padding: 12, borderBottom: '1px solid #e2e8f0', display: 'grid', gap: 8 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <h2 style={{ margin: 0, fontSize: 14 }}>Candidates</h2>
@@ -321,56 +345,66 @@ function CandidateList({
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search ticker or ID"
         />
-        <div className="small" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {EVIDENCE_ITEMS.map((item) => (
-            <span key={item.key} style={{ display: 'inline-flex', gap: 3, alignItems: 'center' }}>
-              <EvidenceDot present={true} label={item.label} />
-              {item.short}
-            </span>
+        <div className="candidate-source-tabs" role="tablist" aria-label="Candidate sources">
+          {SOURCE_TABS.map((tab) => (
+            <button
+              aria-selected={sourceFilter === tab.key}
+              className={sourceFilter === tab.key ? 'primary' : 'secondary'}
+              disabled={tab.disabled}
+              key={tab.key}
+              onClick={() => setSourceFilter(tab.key)}
+              role="tab"
+              type="button"
+              title={tab.disabled ? 'Future user-built model candidate source' : undefined}
+            >
+              {tab.label}
+            </button>
           ))}
         </div>
       </div>
-      <div style={{ display: 'grid' }}>
+      <div className="workspace-list">
         {rows.map((row) => {
           const selected = row.id === selectedRowId
           const evidence = selected ? evidenceFromReport(selectedReport, row.candidate) : evidenceFromCandidate(row.candidate)
           return (
-            <button
+            <div
+              className={selected ? 'candidate-row active' : 'candidate-row'}
               key={row.id}
-              onClick={() => onSelect(row.id)}
-              type="button"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '44px minmax(0, 1fr) 52px',
-                gap: 8,
-                alignItems: 'center',
-                width: '100%',
-                border: 0,
-                borderBottom: '1px solid #e2e8f0',
-                borderRadius: 0,
-                padding: '9px 10px',
-                background: selected ? '#eff6ff' : '#fff',
-                color: '#0f172a',
-                textAlign: 'left',
-              }}
             >
               <strong style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.ticker}</strong>
               <span style={{ display: 'grid', gap: 4, minWidth: 0 }}>
-                <span title={row.id}>
-                  <CopyableId id={row.displayId} maxLen={12} />
-                </span>
-                <span style={{ display: 'flex', gap: 4 }}>
+                <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <input
+                    aria-label={`Compare ${row.displayId}`}
+                    checked={compareIds.includes(row.id)}
+                    onChange={(event) => {
+                      event.stopPropagation()
+                      toggleCompare(row.id)
+                    }}
+                    onClick={(event) => event.stopPropagation()}
+                    style={{ width: 'auto' }}
+                    type="checkbox"
+                  />
+                  <button className="candidate-select-button" onClick={() => onSelect(row.id)} title={row.id} type="button">
+                    {row.displayId}
+                  </button>
                   {EVIDENCE_ITEMS.map((item) => (
                     <EvidenceDot key={item.key} present={evidence[item.key]} label={item.label} />
                   ))}
                 </span>
               </span>
               <span style={{ justifySelf: 'end', fontFamily: 'IBM Plex Mono, SFMono-Regular, Consolas, monospace', fontSize: 12 }}>{row.sharpe}</span>
-            </button>
+            </div>
           )
         })}
         {!loading && rows.length === 0 ? (
-          <div style={{ padding: 12 }}><EmptyState>No candidates match the current search.</EmptyState></div>
+          <div style={{ padding: 12 }}>
+            <EvidenceGap
+              reason={sourceFilter === 'user' ? 'User-built model candidates are reserved for a future backend contract.' : 'No candidates matched the current source and search filters.'}
+              expected={sourceFilter === 'user' ? 'A future user candidate source on /analyst/signal-evaluation/candidates.' : 'Candidate rows from /analyst/signal-evaluation/candidates.'}
+              title="Candidate evidence unavailable"
+            />
+          </div>
         ) : null}
       </div>
     </aside>
@@ -389,24 +423,16 @@ function ChartWorkspace({
   setActiveSeries: (series: PrimaryChartSeries) => void
 }) {
   return (
-    <main style={{ ...columnStyle, padding: 16 }}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }} role="tablist" aria-label="Signal evidence charts">
+    <main className="workspace-column workspace-pane">
+      <div className="chart-tabs" style={{ marginBottom: 12 }} role="tablist" aria-label="Signal evidence charts">
         {PRIMARY_CHART_SERIES.map((series) => (
           <button
             key={series}
             aria-selected={activeSeries === series}
+            className={activeSeries === series ? 'primary' : 'secondary'}
             onClick={() => setActiveSeries(series)}
             role="tab"
             type="button"
-            style={{
-              width: 'auto',
-              minHeight: 34,
-              borderColor: activeSeries === series ? '#0f172a' : '#cbd5e1',
-              background: activeSeries === series ? '#0f172a' : '#fff',
-              color: activeSeries === series ? '#fff' : '#475569',
-              fontSize: 13,
-              fontWeight: 700,
-            }}
           >
             {labelFromKey(series)}
           </button>
@@ -438,14 +464,19 @@ function ChartPanel({
   const series = report?.series?.[seriesKey]
   const points = Array.isArray(series?.points) ? series.points : []
   const chartPoints = pointsToChartPoints(points, series?.x_field, series?.y_field)
+  const gap = gapForSeries(report, seriesKey)
 
   return (
     <section style={{ minWidth: 0, width: '100%', minHeight: 360, display: 'grid', alignContent: 'stretch' }}>
       {chartPoints.length > 0 ? (
         <MiniSeriesChart points={chartPoints} />
       ) : (
-        <div style={{ minHeight: 320, display: 'grid', placeItems: 'center', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: 8 }}>
-          No data available for this series
+        <div style={{ minHeight: 320, display: 'grid', placeItems: 'center' }}>
+          <EvidenceGap
+            reason={gap?.message ?? 'The backend returned an empty series container for this candidate.'}
+            expected={gap?.expected ?? labelFromKey(seriesKey)}
+            title={`${labelFromKey(seriesKey)} unavailable`}
+          />
         </div>
       )}
     </section>
@@ -454,7 +485,7 @@ function ChartPanel({
 
 function SelectionPrompt() {
   return (
-    <div className="small" style={selectionPromptStyle}>
+    <div className="small" style={{ minHeight: 320, display: 'grid', placeItems: 'center', color: '#64748b', textAlign: 'center' }}>
       Select a candidate from the list
     </div>
   )
@@ -518,16 +549,23 @@ function MetricsRow({ report, selectedRow }: { report: SignalEvaluationReport | 
         ))}
       </div>
       {metricsUnavailable ? (
-        <p className="small" style={{ marginTop: 8, color: '#64748b' }}>Metrics not yet available for this candidate</p>
+        <div style={{ marginTop: 8 }}>
+          <EvidenceGap
+            reason={gapForMetrics(report)?.message ?? 'Metrics are not present on this candidate report.'}
+            expected={gapForMetrics(report)?.expected ?? 'metrics_summary_json and robustness_summary_json populated by backend evidence plumbing.'}
+            title="Metrics unavailable"
+          />
+        </div>
       ) : null}
+      {report ? <SummaryPanels report={report} /> : null}
     </>
   )
 }
 
-function SelectedCandidatePanel({ loading, report, selectedRow }: { loading: boolean; report: SignalEvaluationReport | null; selectedRow: ComparisonRow | null }) {
+function SelectedCandidatePanel({ adminEmail, loading, report, selectedRow }: { adminEmail: string; loading: boolean; report: SignalEvaluationReport | null; selectedRow: ComparisonRow | null }) {
   if (!selectedRow) {
     return (
-      <aside style={{ ...columnStyle, borderLeft: '1px solid #e2e8f0', padding: 12, display: 'grid', placeItems: 'center' }}>
+      <aside className="workspace-column" style={{ borderLeft: '1px solid #e2e8f0', padding: 12, display: 'grid', placeItems: 'center' }}>
         <SelectionPrompt />
       </aside>
     )
@@ -539,7 +577,7 @@ function SelectedCandidatePanel({ loading, report, selectedRow }: { loading: boo
   const missing = EVIDENCE_ITEMS.filter((item) => !evidence[item.key])
 
   return (
-    <aside style={{ ...columnStyle, borderLeft: '1px solid #e2e8f0', padding: 12, display: 'grid', gap: 14, alignContent: 'start' }}>
+    <aside className="workspace-column" style={{ borderLeft: '1px solid #e2e8f0', padding: 12, display: 'grid', gap: 14, alignContent: 'start' }}>
       <div style={{ display: 'grid', gap: 8 }}>
         <CopyableId id={candidate.candidate_id} maxLen={candidate.candidate_id.length} />
         <div className="meta">
@@ -578,6 +616,15 @@ function SelectedCandidatePanel({ loading, report, selectedRow }: { loading: boo
       <div style={{ padding: 10, borderRadius: 8, border: `1px solid ${missing.length ? '#fde68a' : '#a7f3d0'}`, background: missing.length ? '#fffbeb' : '#ecfdf5', color: missing.length ? '#92400e' : '#065f46', fontSize: 12, fontWeight: 700 }}>
         {missing.length ? `Blocked — ${missing.map((item) => item.label).join(', ')} missing` : 'Ready — all required evidence present'}
       </div>
+
+      {missing.length ? (
+        <EvidenceGap
+          reason={firstGapMessage(report) ?? 'Some candidate evidence is structurally absent in the backend report.'}
+          expected="Evaluation series and metrics evidence populated for this source type."
+        />
+      ) : null}
+
+      <PromoteToEnvironment adminEmail={adminEmail} candidate={candidate} />
 
       <details style={{ marginTop: 4 }}>
         <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>Debug</summary>
@@ -654,6 +701,186 @@ function SignalMonitor({ monitor, error, selectedTicker }: { monitor: MonitorSta
   )
 }
 
+function CompareWorkspace({ rows }: { rows: ComparisonRow[] }) {
+  if (rows.length < 2) {
+    return (
+      <section className="card" id="compare">
+        <h2>Compare</h2>
+        <EvidenceGap
+          reason="Select at least two candidates from the Candidates pane."
+          expected="Side-by-side candidate metrics and common evidence surfaces."
+          title="Comparison not ready"
+        />
+      </section>
+    )
+  }
+
+  return (
+    <section className="card" id="compare">
+      <div className="split-row">
+        <div>
+          <h2>Compare</h2>
+          <p className="small">Selected candidates, normalized to the metrics already returned by the candidate list.</p>
+        </div>
+        <span className="small">{rows.length} selected</span>
+      </div>
+      <div className="comparison-grid">
+        {rows.map((row) => (
+          <div className="card compact-card" key={row.id}>
+            <div className="split-row">
+              <div>
+                <h3>{row.ticker}</h3>
+                <CopyableId id={row.displayId} maxLen={12} />
+              </div>
+              <span className={`badge ${sourceBadgeClass(row.source)}`}>{row.sourceType}</span>
+            </div>
+            <div className="field-grid" style={{ marginTop: 12 }}>
+              <MetricField label="Sharpe" value={row.sharpe} />
+              <MetricField label="Max DD" value={row.maxDrawdown} />
+              <MetricField label="Annual return" value={row.annualReturn} />
+              <MetricField label="Turnover" value={row.turnover} />
+              <MetricField label="Horizon" value={row.horizon} />
+              <MetricField label="Scope" value={row.tickerUniverse} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function MetricField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <label>{label}</label>
+      <div className="field-value">{value}</div>
+    </div>
+  )
+}
+
+function SummaryPanels({ report }: { report: SignalEvaluationReport }) {
+  const metricsSummary = report.metrics_summary_json
+  const robustnessSummary = report.robustness_summary_json
+  if (!metricsSummary && !robustnessSummary) {
+    return (
+      <div style={{ marginTop: 12 }}>
+        <EvidenceGap
+          reason={gapForMetrics(report)?.message ?? 'The report did not include metrics_summary_json or robustness_summary_json.'}
+          expected={gapForMetrics(report)?.expected ?? 'Backend metrics and robustness summary evidence for this candidate.'}
+          title="Summary evidence unavailable"
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="feature-grid" style={{ marginTop: 12 }}>
+      <SummaryCard title="Metrics summary" value={metricsSummary} />
+      <SummaryCard title="Robustness summary" value={robustnessSummary} />
+    </div>
+  )
+}
+
+function SummaryCard({ title, value }: { title: string; value?: Record<string, unknown> }) {
+  return (
+    <div className="card compact-card">
+      <h3>{title}</h3>
+      {value ? (
+        <div className="field-grid">
+          {Object.entries(value).slice(0, 8).map(([key, item]) => (
+            <MetricField key={key} label={key} value={formatMetricValue(item)} />
+          ))}
+        </div>
+      ) : (
+        <EvidenceGap reason="This summary object was absent from the backend report." expected={title} />
+      )}
+    </div>
+  )
+}
+
+function PromoteToEnvironment({ adminEmail, candidate }: { adminEmail: string; candidate: SignalEvaluationCandidateSummary }) {
+  const [environment, setEnvironment] = useState('paper')
+  const [reason, setReason] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [response, setResponse] = useState<unknown>(null)
+  const registryCandidateId = candidate.links?.registry_candidate_id ?? candidate.candidate_id
+  const bundleId = candidate.links?.bundle_id ?? ''
+  const missingBundle = !bundleId
+
+  async function submit() {
+    setSubmitting(true)
+    setError(null)
+    setResponse(null)
+    try {
+      const promotion = await requestClientJson(`/api/registry/candidates/${encodeURIComponent(registryCandidateId)}/promote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to_status: environment === 'production' ? 'production_candidate' : 'promotion_ready',
+          bundle_id: bundleId || null,
+          actor: adminEmail,
+          reason,
+          confirmed,
+        }),
+      })
+      setResponse({ promotion })
+      if (environment) {
+        const activation = await requestClientJson('/api/registry/active-pointers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            strategy_family: candidate.strategy_family,
+            universe: candidate.universe,
+            environment,
+            active_candidate_id: registryCandidateId,
+            active_bundle_id: bundleId || null,
+            activated_by: adminEmail,
+            activation_reason: reason,
+            confirmed,
+          }),
+        })
+        setResponse({ promotion, activation })
+      }
+    } catch (requestError) {
+      setError(readApiError(requestError, 'Failed to submit promotion action.'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <section className="card compact-card" id="promote">
+      <h3>Promote to environment</h3>
+      <p className="small">Uses the existing registry promotion and active-pointer proxy routes.</p>
+      {missingBundle ? (
+        <EvidenceGap
+          reason="No bundle_id is linked on this evaluation candidate."
+          expected="candidate.links.bundle_id from Signal Evaluation or registry lineage before promotion can be safely submitted."
+          title="Promotion blocked"
+        />
+      ) : null}
+      <label htmlFor="promoteEnvironment">Environment</label>
+      <select id="promoteEnvironment" value={environment} onChange={(event) => setEnvironment(event.target.value)}>
+        <option value="paper">paper</option>
+        <option value="production">production</option>
+      </select>
+      <label htmlFor="promoteReason" style={{ marginTop: 8 }}>Reason</label>
+      <textarea id="promoteReason" rows={3} value={reason} onChange={(event) => setReason(event.target.value)} />
+      <label className="check-row" style={{ marginTop: 8 }}>
+        <input checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} type="checkbox" />
+        <span>confirmed: I reviewed the evidence and want to submit this promotion.</span>
+      </label>
+      <button className="primary" disabled={submitting || missingBundle || !confirmed || !reason.trim()} onClick={() => void submit()} type="button">
+        {submitting ? 'Submitting...' : 'Submit'}
+      </button>
+      <ApiErrorBox error={error} />
+      {response ? <div className="success"><JsonBlock value={response} /></div> : null}
+    </section>
+  )
+}
+
 function SimpleTable({
   title,
   rows,
@@ -681,14 +908,16 @@ function SimpleTable({
                 {columns.map(([key]) => <td key={key}>{row[key] || '—'}</td>)}
               </tr>
             ))}
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length} className="small">{emptyLabel}</td>
-              </tr>
-            ) : null}
           </tbody>
         </table>
       </div>
+      {rows.length === 0 ? (
+        <EvidenceGap
+          reason={emptyLabel}
+          expected="Endpoint rows from the existing signal monitor contract."
+          title="Monitor evidence unavailable"
+        />
+      ) : null}
     </div>
   )
 }
@@ -772,6 +1001,30 @@ function evidenceFromReport(report: SignalEvaluationReport | null, candidate: Si
     ic: hasSeries(series.ic_evolution) || hasSeries(series.rolling_ic) || hasSeries(series.cumulative_ic) || hasAny(metrics, ['ic', 'ic_mean', 'mean_ic', 'ic_latest']),
     forward: hasSeries(series.forward_returns) || hasAny(metrics, ['forward_return', 'mean_forward_return', 'forward_returns']),
   }
+}
+
+function gapForSeries(report: SignalEvaluationReport | null, seriesKey: string): SignalEvaluationGap | null {
+  const series = report?.series?.[seriesKey]
+  const seriesGap = Array.isArray(series?.gaps) ? series.gaps[0] : null
+  if (seriesGap) return seriesGap
+  const reportGaps = Array.isArray(report?.gaps) ? report.gaps : []
+  return reportGaps.find((gap) => {
+    const haystack = `${gap.source ?? ''} ${gap.code ?? ''} ${gap.message ?? ''}`.toLowerCase()
+    return haystack.includes(seriesKey.toLowerCase()) || haystack.includes(labelFromKey(seriesKey).toLowerCase())
+  }) ?? reportGaps[0] ?? null
+}
+
+function gapForMetrics(report: SignalEvaluationReport | null): SignalEvaluationGap | null {
+  const reportGaps = Array.isArray(report?.gaps) ? report.gaps : []
+  return reportGaps.find((gap) => {
+    const haystack = `${gap.source ?? ''} ${gap.code ?? ''} ${gap.message ?? ''} ${gap.expected ?? ''}`.toLowerCase()
+    return haystack.includes('metric') || haystack.includes('robustness')
+  }) ?? reportGaps[0] ?? null
+}
+
+function firstGapMessage(report: SignalEvaluationReport | null): string | null {
+  const gap = Array.isArray(report?.gaps) ? report.gaps[0] : null
+  return gap?.message ?? null
 }
 
 function hasSeries(series?: SignalEvaluationSeries): boolean {
@@ -858,8 +1111,23 @@ function labelFromKey(key: string): string {
     equity_curve: 'Equity curve',
     drawdown: 'Drawdown',
     turnover: 'Turnover',
+    ic_evolution: 'IC evolution',
+    rolling_ic: 'Rolling IC',
+    cumulative_ic: 'Cumulative IC',
+    forward_returns: 'Forward returns',
+    signal_distribution: 'Signal distribution',
+    confidence_calibration: 'Confidence calibration',
+    regime_breakdown: 'Regime breakdown',
+    decay_divergence: 'Decay divergence',
   }
   return labels[key] ?? key
+}
+
+function formatMetricValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—'
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(4)
+  if (typeof value === 'string' || typeof value === 'boolean') return String(value)
+  return JSON.stringify(value)
 }
 
 function formatAxisValue(value: number): string {

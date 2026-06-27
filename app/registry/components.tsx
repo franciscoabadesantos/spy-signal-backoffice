@@ -12,6 +12,7 @@ import {
   buildReadinessEvidenceId,
   isRegistryUnavailableError,
 } from '@/lib/registry-backend'
+import { EvidenceGap } from '@/app/components/workspace-data'
 
 export function RegistryErrorState({ error }: { error: unknown }) {
   const registryError = error instanceof RegistryBackendError ? error : null
@@ -37,7 +38,13 @@ export function RegistryErrorState({ error }: { error: unknown }) {
 }
 
 export function EmptyState({ children }: { children: React.ReactNode }) {
-  return <p className="small empty-state">{children}</p>
+  return (
+    <EvidenceGap
+      reason={children}
+      expected="Registry evidence rows from the finance-backend registry contracts."
+      title="Registry evidence unavailable"
+    />
+  )
 }
 
 export function RegistryHeader({ adminEmail }: { adminEmail: string }) {

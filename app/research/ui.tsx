@@ -3,6 +3,8 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
+import { asRecord, unwrapList, unwrapRecord } from '@/lib/payload'
+import { EvidenceGap } from '@/app/components/workspace-data'
 import { ExperimentTable, readCandidateId, type ResearchArtifact, type ResearchEvent, type ResearchExperiment } from '@/components/research/ExperimentTable'
 import { CrossSectionalExperimentForm, type CrossSectionalSubmissionResult } from '@/components/research/CrossSectionalExperimentForm'
 
@@ -20,6 +22,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   const [events, setEvents] = useState<ResearchEvent[]>([])
   const [artifacts, setArtifacts] = useState<ResearchArtifact[]>([])
   const [loadingExperiments, setLoadingExperiments] = useState(false)
+  const [runTypeFilter, setRunTypeFilter] = useState<'all' | 'experiment' | 'batch'>(() => initialRunTypeFilter())
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pagination, setPagination] = useState<Pagination | null>(null)
@@ -27,8 +30,10 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   const loggedCompletedDetailRef = useRef(false)
 
   const sortedExperiments = useMemo(
-    () => [...experiments].sort((a, b) => toTimestamp(b.started_at ?? b.created_at) - toTimestamp(a.started_at ?? a.created_at)),
-    [experiments]
+    () => [...experiments]
+      .filter((run) => runTypeFilter === 'all' || (run.run_type ?? 'experiment') === runTypeFilter)
+      .sort((a, b) => toTimestamp(b.started_at ?? b.created_at) - toTimestamp(a.started_at ?? a.created_at)),
+    [experiments, runTypeFilter]
   )
 
   async function loadExperiments(newOffset = 0) {
@@ -36,10 +41,15 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     setError(null)
     try {
       const query = new URLSearchParams({ limit: '80', offset: String(newOffset) })
-      const payload = await requestClientJson(`/api/research/experiments?${query.toString()}`)
-      const list = await hydrateCompletedCandidateDetails(normalizeExperiments(payload), loggedCompletedDetailRef)
+      const [experimentPayload, batchPayload] = await Promise.all([
+        requestClientJson(`/api/research/experiments?${query.toString()}`),
+        requestClientJson('/api/research/batches?limit=100'),
+      ])
+      const experimentList = await hydrateCompletedCandidateDetails(normalizeExperiments(experimentPayload), loggedCompletedDetailRef)
+      const batchList = normalizeBatchesAsRuns(batchPayload)
+      const list = [...experimentList, ...batchList]
       setExperiments(list)
-      const page = asRecord(asRecord(payload)?.pagination)
+      const page = unwrapRecord(experimentPayload, ['pagination'])
       setPagination(page as Pagination | null)
       setOffset(typeof page?.offset === 'number' ? page.offset : newOffset)
       if (expandedExperimentId && !list.some((experiment) => experiment.experiment_id === expandedExperimentId)) {
@@ -122,7 +132,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
         <div className="split-row">
           <div>
             <h1>Research</h1>
-            <p className="small">Launch catalog-driven cross-sectional experiments and inspect research runs.</p>
+            <p className="small">Launch catalog-driven cross-sectional experiments and inspect experiment or batch runs from one queue.</p>
           </div>
           <div className="small">Admin: {adminEmail}</div>
         </div>
@@ -133,13 +143,26 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
       <CrossSectionalExperimentForm adminEmail={adminEmail} onCreated={handleCreated} />
 
       <div className="split-row">
-        <div className="small">{loadingExperiments ? 'Refreshing experiments...' : 'Sorted by started date descending.'}</div>
-        <div style={{ minWidth: 180 }}>
+        <div className="small">{loadingExperiments ? 'Refreshing runs...' : 'Sorted by started date descending. Batch rows drill into existing batch detail.'}</div>
+        <div style={{ display: 'flex', gap: 8, minWidth: 320 }}>
+          <select aria-label="Run type filter" value={runTypeFilter} onChange={(event) => setRunTypeFilter(event.target.value as typeof runTypeFilter)}>
+            <option value="all">All run types</option>
+            <option value="experiment">Experiments</option>
+            <option value="batch">Batches</option>
+          </select>
           <button className="secondary" type="button" onClick={() => void loadExperiments(offset)} disabled={loadingExperiments}>
             {loadingExperiments ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
       </div>
+
+      {!loadingExperiments && experiments.some((run) => run.run_type === 'batch') === false ? (
+        <EvidenceGap
+          reason="Batch Results is currently empty because the backend batch store returns total:0."
+          expected="Persisted batch rows from /analyst/research/batches; this is a backend persistence/wiring dependency, not a frontend failure."
+          title="Batch run evidence unavailable"
+        />
+      ) : null}
 
       <ExperimentTable
         artifacts={artifacts}
@@ -195,14 +218,32 @@ async function hydrateCompletedCandidateDetails(
 }
 
 function normalizeExperiments(payload: unknown): ResearchExperiment[] {
-  return readListPayload<ResearchExperiment>(payload, ['jobs', 'experiments', 'items', 'results']).filter(
+  return unwrapList<ResearchExperiment>(payload, ['jobs', 'experiments', 'items', 'results']).filter(
     (item) => typeof item?.experiment_id === 'string'
-  )
+  ).map((item) => ({ ...item, run_type: 'experiment' }))
+}
+
+function normalizeBatchesAsRuns(payload: unknown): ResearchExperiment[] {
+  return unwrapList<Record<string, unknown>>(payload, ['batches', 'jobs', 'items', 'results']).map((row, index) => {
+    const id = readStringValue(row.batch_id ?? row.id ?? row.job_id ?? row.research_batch_id) ?? `batch-${index}`
+    return {
+      ...row,
+      experiment_id: id,
+      batch_id: id,
+      run_type: 'batch',
+      experiment_name: readStringValue(row.batch_name ?? row.name) ?? 'Batch grid',
+      strategy_family: readStringValue(row.strategy_family ?? row.family),
+      universe: readStringValue(row.universe ?? row.symbols),
+      status: readStringValue(row.status ?? row.state),
+      created_at: readStringValue(row.created_at ?? row.submitted_at ?? row.started_at),
+      started_at: readStringValue(row.started_at ?? row.created_at ?? row.submitted_at),
+    }
+  })
 }
 
 function normalizeExperimentDetail(payload: unknown, fallback: ResearchExperiment): ResearchExperiment | null {
   const record = asRecord(payload)
-  const nested = asRecord(record?.experiment)
+  const nested = unwrapRecord(payload, ['experiment'])
   if (typeof nested?.experiment_id === 'string') {
     return { ...nested, experiment_id: nested.experiment_id, detail_response: payload }
   }
@@ -213,26 +254,17 @@ function normalizeExperimentDetail(payload: unknown, fallback: ResearchExperimen
 }
 
 function normalizeEvents(payload: unknown): ResearchEvent[] {
-  return readListPayload<ResearchEvent>(payload, ['events', 'items', 'results'])
+  return unwrapList<ResearchEvent>(payload, ['events', 'items', 'results'])
 }
 
 function normalizeArtifacts(payload: unknown): ResearchArtifact[] {
-  return readListPayload<ResearchArtifact>(payload, ['artifacts', 'items', 'results'])
+  return unwrapList<ResearchArtifact>(payload, ['artifacts', 'items', 'results'])
 }
 
-function readListPayload<T>(payload: unknown, keys: string[]): T[] {
-  if (Array.isArray(payload)) return payload as T[]
-  const record = asRecord(payload)
-  if (!record) return []
-  for (const key of keys) {
-    if (Array.isArray(record[key])) return record[key] as T[]
-  }
-  return []
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  return value as Record<string, unknown>
+function readStringValue(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return null
 }
 
 function toTimestamp(value?: string | null): number {
@@ -243,4 +275,10 @@ function toTimestamp(value?: string | null): number {
 
 function isCompleted(status?: string | null): boolean {
   return ['done', 'completed', 'succeeded', 'success'].includes(String(status ?? '').trim().toLowerCase())
+}
+
+function initialRunTypeFilter(): 'all' | 'experiment' | 'batch' {
+  if (typeof window === 'undefined') return 'all'
+  const type = new URLSearchParams(window.location.search).get('type')
+  return type === 'experiment' || type === 'batch' ? type : 'all'
 }

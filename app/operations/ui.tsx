@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
-import { ApiErrorBox, DynamicTable, EmptyState, asRecord, readArrayPayload, readString } from '@/app/components/workspace-data'
+import { ApiErrorBox, DynamicTable, EvidenceGap, asRecord, readArrayPayload, readString } from '@/app/components/workspace-data'
 
 const OLD_RUNNING_MINUTES = 30
 
@@ -115,11 +115,19 @@ export default function OperationsWorkspace({ adminEmail }: { adminEmail: string
         <p className="small">
           This is not worker health. It flags rows whose status is queued/running and whose created_at or started_at timestamp is older than {OLD_RUNNING_MINUTES} minutes.
         </p>
-        <DynamicTable rows={heuristicRows} columns={[
-          { key: 'source', label: 'Source' },
-          ...JOB_COLUMNS,
-          { key: 'heuristicAgeMinutes', label: 'Approx Age (min)' },
-        ]} emptyLabel="No old queued/running rows matched the UI heuristic." />
+        {heuristicRows.length > 0 ? (
+          <DynamicTable rows={heuristicRows} columns={[
+            { key: 'source', label: 'Source' },
+            ...JOB_COLUMNS,
+            { key: 'heuristicAgeMinutes', label: 'Approx Age (min)' },
+          ]} />
+        ) : (
+          <EvidenceGap
+            reason="No old queued/running rows matched the UI heuristic."
+            expected="Queued/running rows older than the local threshold from the visible job list contracts."
+            title="Queue heuristic evidence unavailable"
+          />
+        )}
       </div>
 
       <JobSection title="Analyst Jobs Summary" route="/api/analyst/jobs?limit=100" rows={state.analystJobs} />
@@ -149,7 +157,13 @@ function JobSection({ title, route, rows }: { title: string; route: string; rows
         </div>
         <div className="small">{rows.length} returned</div>
       </div>
-      {rows.length === 0 ? <EmptyState>No rows returned.</EmptyState> : <DynamicTable rows={rows} columns={JOB_COLUMNS} />}
+      {rows.length === 0 ? (
+        <EvidenceGap
+          reason={`No rows were returned from ${route}.`}
+          expected="Rows from the existing backend job list proxy."
+          title="Job list evidence unavailable"
+        />
+      ) : <DynamicTable rows={rows} columns={JOB_COLUMNS} />}
     </div>
   )
 }

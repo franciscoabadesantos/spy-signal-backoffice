@@ -4,11 +4,14 @@ import Link from 'next/link'
 import { Fragment, useState, type CSSProperties } from 'react'
 import { CopyableId } from '@/components/ui/CopyableId'
 import { formatDate } from '@/lib/format'
+import { EvidenceGap } from '@/app/components/workspace-data'
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
 export type ResearchExperiment = {
   experiment_id: string
+  run_type?: 'experiment' | 'batch'
+  batch_id?: string | null
   status?: string | null
   experiment_name?: string | null
   strategy_family?: string | null
@@ -65,14 +68,15 @@ export function ExperimentTable({
   return (
     <div className="card">
       <div className="split-row">
-        <h2>Experiment library</h2>
-        <span className="small">{experiments.length} experiments</span>
+        <h2>Launch & Runs library</h2>
+        <span className="small">{experiments.length} runs</span>
       </div>
       <div className="table-wrap" style={{ marginTop: 12 }}>
         <table className="registry-table">
           <thead>
             <tr>
               <th>ID</th>
+              <th>Type</th>
               <th>Model / strategy</th>
               <th>Ticker</th>
               <th>Horizon</th>
@@ -84,6 +88,7 @@ export function ExperimentTable({
           <tbody>
             {experiments.map((experiment) => {
               const candidateId = readCandidateId(experiment)
+              const isBatch = experiment.run_type === 'batch'
               const expanded = expandedExperimentId === experiment.experiment_id
               return (
                 <Fragment key={experiment.experiment_id}>
@@ -91,29 +96,41 @@ export function ExperimentTable({
                     aria-expanded={expanded}
                     id={experimentAnchorId(experiment.experiment_id)}
                     onKeyDown={(event) => {
+                      if (isBatch) return
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault()
                         onToggle(experiment.experiment_id)
                       }
                     }}
-                    onClick={() => onToggle(experiment.experiment_id)}
-                    role="button"
-                    style={{ cursor: 'pointer' }}
-                    tabIndex={0}
+                    onClick={() => {
+                      if (!isBatch) onToggle(experiment.experiment_id)
+                    }}
+                    role={isBatch ? undefined : 'button'}
+                    style={{ cursor: isBatch ? 'default' : 'pointer' }}
+                    tabIndex={isBatch ? undefined : 0}
                   >
                     <td>
-                      <span onClick={(event) => event.stopPropagation()}>
-                        <CopyableId id={experiment.experiment_id} maxLen={12} />
-                      </span>
+                      {experiment.run_type === 'batch' ? (
+                        <span onClick={(event) => event.stopPropagation()}>
+                          <Link className="text-link" href={`/research/batches/${encodeURIComponent(experiment.batch_id ?? experiment.experiment_id)}`}>
+                            {experiment.batch_id ?? experiment.experiment_id}
+                          </Link>
+                        </span>
+                      ) : (
+                        <span onClick={(event) => event.stopPropagation()}>
+                          <CopyableId id={experiment.experiment_id} maxLen={12} />
+                        </span>
+                      )}
                     </td>
+                    <td><span className="badge queued">{experiment.run_type ?? 'experiment'}</span></td>
                     <td>{renderText(experiment.strategy_family ?? experiment.experiment_name)}</td>
                     <td>{tickerText(experiment)}</td>
                     <td>{renderText(experiment.horizon)}</td>
                     <td><StatusBadge status={experiment.status} /></td>
                     <td onClick={(event) => event.stopPropagation()}>
                       {candidateId ? (
-                        <Link className="text-link" href={`/signals?candidate=${encodeURIComponent(candidateId)}`}>
-                          View in Signals →
+                        <Link className="text-link" href={`/evaluation?candidate=${encodeURIComponent(candidateId)}`}>
+                          Evaluate →
                         </Link>
                       ) : <span title="No candidate output found in experiment detail">—</span>}
                     </td>
@@ -121,7 +138,7 @@ export function ExperimentTable({
                   </tr>
                   {expanded ? (
                     <tr key={`${experiment.experiment_id}-detail`}>
-                      <td colSpan={7}>
+                      <td colSpan={8}>
                         <ExpandedExperimentDetail
                           artifacts={artifacts}
                           events={events}
@@ -136,7 +153,13 @@ export function ExperimentTable({
             })}
             {experiments.length === 0 ? (
               <tr>
-                <td className="small" colSpan={7}>No experiments returned.</td>
+                <td colSpan={8}>
+                  <EvidenceGap
+                    reason="The research run contracts returned no experiment or batch rows."
+                    expected="Rows from /analyst/research/experiments and /analyst/research/batches."
+                    title="Research runs unavailable"
+                  />
+                </td>
               </tr>
             ) : null}
           </tbody>
@@ -182,7 +205,13 @@ function ExpandedExperimentDetail({
                 : <EventErrorBlock item={item} key={item.event.event_id ?? `error-${index}`} />
             ))}
           </div>
-        ) : <p className="small">No events returned.</p>}
+        ) : (
+          <EvidenceGap
+            reason="No event rows were returned for this run."
+            expected="Rows from /analyst/research/experiments/{id}/events."
+            title="Run events unavailable"
+          />
+        )}
       </div>
       <div>
         <h4 style={{ marginBottom: 8 }}>Artifacts</h4>
@@ -198,7 +227,13 @@ function ExpandedExperimentDetail({
               </div>
             ))}
           </div>
-        ) : <p className="small">No artifacts returned.</p>}
+        ) : (
+          <EvidenceGap
+            reason="No artifact rows were returned for this run."
+            expected="Rows from /analyst/research/experiments/{id}/artifacts."
+            title="Run artifacts unavailable"
+          />
+        )}
       </div>
     </div>
   )

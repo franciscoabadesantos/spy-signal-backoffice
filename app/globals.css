@@ -637,6 +637,21 @@ button:disabled {
   font-weight: 600;
 }
 
+.evidence-gap {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.evidence-gap strong {
+  color: #78350f;
+}
+
 pre {
   white-space: pre-wrap;
   word-break: break-all;
@@ -835,6 +850,88 @@ details summary {
   background: #f8fafc;
   font-size: 12px;
   font-weight: 700;
+}
+
+.workspace-shell {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 260px;
+  min-height: 620px;
+  height: calc(100vh - 128px);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dbe3f0;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 16px;
+}
+
+.workspace-column {
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.workspace-pane {
+  padding: 16px;
+}
+
+.workspace-list {
+  display: grid;
+}
+
+.candidate-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 58px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 58px;
+  border: 0;
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 0;
+  padding: 9px 10px;
+  background: #fff;
+  color: #0f172a;
+  text-align: left;
+}
+
+.candidate-row.active {
+  background: #eff6ff;
+}
+
+.candidate-select-button {
+  width: auto;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: #0f172a;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.candidate-source-tabs,
+.chart-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.candidate-source-tabs button,
+.chart-tabs button {
+  width: auto;
+  min-height: 34px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .bar-list {
@@ -1794,5 +1891,18 @@ details summary {
 
   .detail-panel {
     position: static;
+  }
+
+  .workspace-shell,
+  .comparison-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-shell {
+    height: auto;
+  }
+
+  .workspace-column {
+    max-height: none;
   }
 }

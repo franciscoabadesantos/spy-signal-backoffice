@@ -3,7 +3,7 @@
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
-import { ApiErrorBox, EmptyState, JsonBlock, asRecord, formatUnknown } from '@/app/components/workspace-data'
+import { ApiErrorBox, EvidenceGap, JsonBlock, asRecord, formatUnknown } from '@/app/components/workspace-data'
 
 type MemberRow = Record<string, unknown>
 type SortKey = 'rank_ic' | 'rank_ic_ir' | 'top_bottom_spread' | 'mcpt_p_value' | 'turnover' | 'net_return'
@@ -103,7 +103,13 @@ export default function BatchResultsWorkspace({ adminEmail, batchId }: { adminEm
       </div>
 
       {members.length === 0 ? (
-        <div className="card"><EmptyState>No member results returned yet.</EmptyState></div>
+        <div className="card">
+          <EvidenceGap
+            reason="The batch results endpoint returned no member rows."
+            expected="Persisted batch member results from /analyst/research/batches/{batch_id}/results; the empty batch store is a documented backend dependency."
+            title="Batch member evidence unavailable"
+          />
+        </div>
       ) : (
         <>
           <div className="leque-grid">
@@ -117,7 +123,11 @@ export default function BatchResultsWorkspace({ adminEmail, batchId }: { adminEm
             <h2>Sensitivity by Axis</h2>
             <p className="small">Average rank-IC grouped by axis values advertised in each member config.</p>
             {axisSummaries.length === 0 ? (
-              <EmptyState>No axis metadata was returned on member rows.</EmptyState>
+              <EvidenceGap
+                reason="Member rows did not include axis metadata."
+                expected="Axis fields on persisted batch member rows."
+                title="Batch axis evidence unavailable"
+              />
             ) : (
               <div className="axis-summary-grid">
                 {axisSummaries.map((summary) => (
@@ -178,7 +188,9 @@ function DistributionCard({ title, values }: { title: string; values: number[] }
   return (
     <div className="card compact-card">
       <h3>{title}</h3>
-      {values.length > 0 ? <Histogram values={values} /> : <EmptyState>No values returned.</EmptyState>}
+      {values.length > 0 ? <Histogram values={values} /> : (
+        <EvidenceGap reason="No numeric values were returned for this axis." expected="Numeric batch result fields." title="Histogram evidence unavailable" />
+      )}
     </div>
   )
 }
@@ -229,7 +241,9 @@ function ScatterCard({ members }: { members: NormalizedMember[] }) {
   return (
     <div className="card compact-card">
       <h3>Turnover vs Net Return</h3>
-      {points.length > 0 ? <ScatterPlot points={points} /> : <EmptyState>No paired values returned.</EmptyState>}
+      {points.length > 0 ? <ScatterPlot points={points} /> : (
+        <EvidenceGap reason="No paired numeric values were returned for this axis pair." expected="Numeric batch result fields for both axes." title="Scatter evidence unavailable" />
+      )}
     </div>
   )
 }

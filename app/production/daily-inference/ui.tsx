@@ -3,7 +3,8 @@
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
-import { ApiErrorBox, EmptyState, JsonBlock, asRecord, formatUnknown } from '@/app/components/workspace-data'
+import { unwrapList } from '@/lib/payload'
+import { ApiErrorBox, EvidenceGap, JsonBlock, formatUnknown } from '@/app/components/workspace-data'
 
 type JobRow = Record<string, unknown>
 
@@ -88,7 +89,13 @@ export default function DailyInferenceWorkspace() {
           </div>
           <span className="small">{loading ? 'Refreshing...' : `${jobs.length} jobs`}</span>
         </div>
-        {jobs.length === 0 ? <EmptyState>No daily inference jobs returned.</EmptyState> : <JobTable jobs={jobs} />}
+        {jobs.length === 0 ? (
+          <EvidenceGap
+            reason="No daily inference jobs were returned for the selected environment/date."
+            expected="Rows from /analyst/production/daily-inference once production inference has run."
+            title="Daily inference evidence unavailable"
+          />
+        ) : <JobTable jobs={jobs} />}
       </div>
 
       <details className="card">
@@ -138,13 +145,7 @@ function JobTable({ jobs }: { jobs: JobRow[] }) {
 }
 
 function normalizeJobs(payload: unknown): JobRow[] {
-  if (Array.isArray(payload)) return payload as JobRow[]
-  const record = asRecord(payload)
-  if (!record) return []
-  for (const key of ['jobs', 'daily_inference_jobs', 'items', 'results']) {
-    if (Array.isArray(record[key])) return record[key] as JobRow[]
-  }
-  return []
+  return unwrapList<JobRow>(payload, ['jobs', 'daily_inference_jobs', 'items', 'results'])
 }
 
 function summarize(jobs: JobRow[]) {

@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
-import { ApiErrorBox, EmptyState, JsonBlock, asRecord, formatUnknown } from '@/app/components/workspace-data'
+import { asRecord, unwrapList } from '@/lib/payload'
+import { ApiErrorBox, EvidenceGap, JsonBlock, formatUnknown } from '@/app/components/workspace-data'
 
 type RowRecord = Record<string, unknown>
 
@@ -69,18 +70,36 @@ export default function RegistryMonitoringWorkspace({ adminEmail }: { adminEmail
 
       <div className="card">
         <h2>Latest snapshots by active pointer</h2>
-        {snapshots.length === 0 ? <EmptyState>No monitoring snapshots returned.</EmptyState> : <SnapshotGrid snapshots={snapshots} />}
+        {snapshots.length === 0 ? (
+          <EvidenceGap
+            reason="No monitoring snapshots were returned by the registry monitoring contract."
+            expected="Rows from /analyst/registry/monitoring/snapshots."
+            title="Monitoring snapshots unavailable"
+          />
+        ) : <SnapshotGrid snapshots={snapshots} />}
       </div>
 
       <div className="card">
         <h2>Alerts</h2>
-        {alerts.length === 0 ? <EmptyState>No alerts returned.</EmptyState> : <AlertsTable alerts={alerts} />}
+        {alerts.length === 0 ? (
+          <EvidenceGap
+            reason="No alerts were returned by the registry monitoring contract."
+            expected="Rows from /analyst/registry/monitoring/alerts."
+            title="Monitoring alerts unavailable"
+          />
+        ) : <AlertsTable alerts={alerts} />}
       </div>
 
       <div className="card">
         <h2>Rollback controls</h2>
         <p className="small">Rollback is never automatic. Choose an active pointer, review current and target fields, provide a reason, and confirm.</p>
-        {pointers.length === 0 ? <EmptyState>No active pointers returned.</EmptyState> : <PointerRollbackTable pointers={pointers} onRollback={setRollbackPointer} />}
+        {pointers.length === 0 ? (
+          <EvidenceGap
+            reason="No active pointers were returned, so rollback controls have no target."
+            expected="Rows from /analyst/registry/active-pointers."
+            title="Rollback controls unavailable"
+          />
+        ) : <PointerRollbackTable pointers={pointers} onRollback={setRollbackPointer} />}
       </div>
 
       <details className="card">
@@ -313,13 +332,7 @@ function StatusPill({ value }: { value: unknown }) {
 }
 
 function normalizeList(payload: unknown, keys: string[]): RowRecord[] {
-  if (Array.isArray(payload)) return payload as RowRecord[]
-  const record = asRecord(payload)
-  if (!record) return []
-  for (const key of keys) {
-    if (Array.isArray(record[key])) return record[key] as RowRecord[]
-  }
-  return []
+  return unwrapList<RowRecord>(payload, keys)
 }
 
 function readSurface(snapshot: RowRecord, surface: string): { value: unknown; status: unknown } {

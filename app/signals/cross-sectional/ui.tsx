@@ -3,7 +3,8 @@
 import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
-import { ApiErrorBox, EmptyState, JsonBlock, asRecord, formatUnknown } from '@/app/components/workspace-data'
+import { asRecord, unwrapList, unwrapRecord } from '@/lib/payload'
+import { ApiErrorBox, EvidenceGap, JsonBlock, formatUnknown } from '@/app/components/workspace-data'
 
 type SignalRow = Record<string, unknown>
 
@@ -90,7 +91,13 @@ export default function CrossSectionalSignalsWorkspace() {
           </div>
           <span className="small">{loading ? 'Refreshing...' : `${rows.length} rows`}</span>
         </div>
-        {sortedRows.length === 0 ? <EmptyState>No cross-sectional signal rows returned.</EmptyState> : <SignalTable rows={sortedRows} />}
+        {sortedRows.length === 0 ? (
+          <EvidenceGap
+            reason="No ranked panel rows were returned for active_production=true."
+            expected="An active production pointer and cross-sectional signal rows from /signals/cross-sectional."
+            title="No production panel evidence"
+          />
+        ) : <SignalTable rows={sortedRows} />}
       </div>
 
       <details className="card">
@@ -145,15 +152,10 @@ function SignalTable({ rows }: { rows: SignalRow[] }) {
 }
 
 function normalizeRows(payload: unknown): SignalRow[] {
-  if (Array.isArray(payload)) return payload as SignalRow[]
-  const record = asRecord(payload)
-  if (!record) return []
-  for (const key of ['rows', 'signals', 'panel', 'items', 'results']) {
-    if (Array.isArray(record[key])) return record[key] as SignalRow[]
-  }
-  const nested = asRecord(record.panel)
-  if (Array.isArray(nested?.rows)) return nested.rows as SignalRow[]
-  return []
+  const direct = unwrapList<SignalRow>(payload, ['rows', 'signals', 'panel', 'items', 'results'])
+  if (direct.length > 0) return direct
+  const nested = unwrapRecord(payload, ['panel'])
+  return unwrapList<SignalRow>(nested, ['rows'])
 }
 
 function Metric({ label, value }: { label: string; value: unknown }) {

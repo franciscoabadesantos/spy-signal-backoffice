@@ -10,9 +10,9 @@ export type SidebarDot = 'green' | 'amber' | 'red' | 'gray'
 export type SidebarHealth = {
   data: SidebarDot
   research: SidebarDot
-  signals: SidebarDot
-  registry: SidebarDot
-  operations: SidebarDot
+  evaluation: SidebarDot
+  production: SidebarDot
+  frontoffice: SidebarDot
   system: SidebarDot
 }
 
@@ -46,7 +46,10 @@ export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = f
   const [sidebarHealth, setSidebarHealth] = useState(health)
   const [sidebarCandidateCount, setSidebarCandidateCount] = useState(candidateCount)
   const [sidebarFailedJobCount, setSidebarFailedJobCount] = useState(failedJobCount)
-  const isActive = (href: string) => href === '/' ? pathname === '/' : pathname.startsWith(href)
+  const isActive = (href: string) => {
+    const cleanHref = href.split('#')[0]
+    return cleanHref === '/' ? pathname === '/' : pathname.startsWith(cleanHref)
+  }
 
   useEffect(() => {
     if (!loadStatus) return
@@ -78,40 +81,53 @@ export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = f
       ],
     },
     {
-      label: 'Data',
+      label: 'DATA',
       items: [
         { label: 'Data', href: '/data', dot: sidebarHealth.data },
       ],
     },
     {
-      label: 'Pipeline',
+      label: 'RESEARCH',
       items: [
-        { label: 'Research Launch', href: '/research', dot: sidebarHealth.research },
-        { label: 'Batch Results', href: '/research/batches', dot: sidebarHealth.research },
-        { label: 'Cross-Sectional', href: '/signals/cross-sectional', dot: sidebarHealth.signals },
-        { label: 'Daily Inference', href: '/production/daily-inference', dot: sidebarHealth.operations },
-        { label: 'Signals', href: '/signals', dot: sidebarHealth.signals, badge: sidebarCandidateCount },
-        { label: 'Registry', href: '/registry', dot: sidebarHealth.registry },
+        { label: 'Launch & Runs', href: '/research', dot: sidebarHealth.research },
       ],
     },
     {
-      label: 'Product',
+      label: 'EVALUATION',
       items: [
-        { label: 'Frontoffice', href: '/frontoffice', dot: 'green' },
-        { label: 'Analyst', href: '/analyst', dot: 'gray' },
+        { label: 'Candidates', href: '/evaluation', dot: sidebarHealth.evaluation, badge: sidebarCandidateCount },
+        { label: 'Compare', href: '/evaluation#compare', dot: sidebarHealth.evaluation },
+        { label: 'Promote', href: '/evaluation#promote', dot: sidebarHealth.evaluation },
       ],
     },
     {
-      label: 'System',
+      label: 'PRODUCTION',
+      items: [
+        { label: 'Active models', href: '/production', dot: sidebarHealth.production },
+        { label: 'Daily inference', href: '/production/daily-inference', dot: sidebarHealth.production },
+        { label: 'Live panel', href: '/production#live-panel', dot: sidebarHealth.production },
+        { label: 'Monitoring', href: '/production#monitoring', dot: sidebarHealth.production },
+      ],
+    },
+    {
+      label: 'FRONTOFFICE',
+      items: [
+        { label: 'AI research', href: '/frontoffice', dot: sidebarHealth.frontoffice },
+        { label: 'User models', href: '/frontoffice#user-models', dot: 'gray' },
+      ],
+    },
+    {
+      label: 'SYSTEM',
       items: [
         {
-          label: 'Operations',
+          label: 'Job queue',
           href: '/operations',
-          dot: sidebarHealth.operations,
+          dot: sidebarHealth.system,
           badge: sidebarFailedJobCount ? `${sidebarFailedJobCount} fail` : undefined,
         },
-        { label: 'System', href: '/diagnostics', dot: sidebarHealth.system },
         { label: 'Contracts', href: '/contracts', dot: 'gray' },
+        { label: 'Analyst smoke tests', href: '/analyst', dot: 'gray' },
+        { label: 'System', href: '/diagnostics', dot: sidebarHealth.system },
       ],
     },
   ]

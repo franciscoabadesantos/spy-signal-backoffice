@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
-import { ApiErrorBox, DynamicTable, EmptyState, JsonBlock, asRecord, readArrayPayload, readString } from '@/app/components/workspace-data'
+import { ApiErrorBox, DynamicTable, EvidenceGap, JsonBlock, asRecord, readArrayPayload, readString } from '@/app/components/workspace-data'
 
 const RUN_COLUMNS = [
   { key: 'id', label: 'Run ID', keys: ['id', 'runId', 'run_id'] },
@@ -50,6 +50,7 @@ export default function FrontofficeWorkspace({ adminEmail }: { adminEmail: strin
   const [activityLoading, setActivityLoading] = useState(false)
   const [lookupLoading, setLookupLoading] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState<'ai' | 'user'>(() => initialFrontofficeTab())
 
   async function loadWatchlistActivity() {
     setActivityLoading(true)
@@ -127,6 +128,15 @@ export default function FrontofficeWorkspace({ adminEmail }: { adminEmail: strin
     return () => window.clearTimeout(timer)
   }, [])
 
+  useEffect(() => {
+    function syncHashTab() {
+      setActiveTab(window.location.hash === '#user-models' ? 'user' : 'ai')
+    }
+    syncHashTab()
+    window.addEventListener('hashchange', syncHashTab)
+    return () => window.removeEventListener('hashchange', syncHashTab)
+  }, [])
+
   function onUserSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     void loadUserLookup()
@@ -139,25 +149,41 @@ export default function FrontofficeWorkspace({ adminEmail }: { adminEmail: strin
 
   return (
     <div className="page-stack">
-      <div className="hero-panel">
+      <div className="card">
         <div>
-          <p className="eyebrow">Frontoffice / User Research Control</p>
-          <h1>Inspect what frontoffice users are watching and researching as far as backend contracts allow.</h1>
-          <p className="hero-copy">
-            This workspace uses existing site watchlist and AI research run contracts through Backoffice admin proxies. User-wide and all-user admin reporting remains a backend gap.
-          </p>
+          <h1>Frontoffice</h1>
+          <p className="small">Inspect frontoffice AI research runs now; reserve user-built model administration for the future contract.</p>
         </div>
-        <div className="hero-actions">
+        <div className="split-row" style={{ marginTop: 12 }}>
+          <div className="chart-tabs" role="tablist" aria-label="Frontoffice tabs">
+            <button className={activeTab === 'ai' ? 'primary' : 'secondary'} onClick={() => setActiveTab('ai')} type="button">AI research</button>
+            <button className={activeTab === 'user' ? 'primary' : 'secondary'} onClick={() => setActiveTab('user')} type="button">User models</button>
+          </div>
           <div className="small">Admin: {adminEmail}</div>
-          <button className="hero-link" type="button" onClick={loadWatchlistActivity} disabled={activityLoading}>
-            {activityLoading ? 'Refreshing...' : 'Refresh Watchlist Activity'}
-          </button>
         </div>
       </div>
 
+      {activeTab === 'user' ? (
+        <div className="card" id="user-models">
+          <h2>User models</h2>
+          <EvidenceGap
+            reason="User-built model administration is reserved in the IA, but the backend does not expose user candidate sources or all-user admin model contracts yet."
+            expected="A user candidate source on /analyst/signal-evaluation/candidates and all-user frontoffice admin contracts."
+            title="Coming soon"
+          />
+        </div>
+      ) : (
+        <>
       <div className="card">
-        <h2>Watchlist Activity</h2>
-        <p className="small">Backend: GET /site/watchlist/all-tickers and GET /site/watchlist/subscriptions.</p>
+        <div className="split-row">
+          <div>
+            <h2>Watchlist activity</h2>
+            <p className="small">Backend: GET /site/watchlist/all-tickers and GET /site/watchlist/subscriptions.</p>
+          </div>
+          <button className="secondary" type="button" onClick={loadWatchlistActivity} disabled={activityLoading}>
+            {activityLoading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
         <ApiErrorBox error={activityError} />
         {allTickers.length > 0 ? (
           <div className="meta">
@@ -166,14 +192,18 @@ export default function FrontofficeWorkspace({ adminEmail }: { adminEmail: strin
             ))}
           </div>
         ) : (
-          <EmptyState>No watched tickers returned.</EmptyState>
+          <EvidenceGap reason="No watched tickers were returned by the current backend contract." expected="Rows from /site/watchlist/all-tickers." title="Watchlist activity unavailable" />
         )}
       </div>
 
       <div className="card">
         <h2>Watchlist Subscriptions</h2>
         <p className="small">Shows subscription rows returned by the backend. If user counts are needed, the backend should expose an admin summary contract.</p>
-        <DynamicTable rows={subscriptions} columns={SUBSCRIPTION_COLUMNS} />
+        {subscriptions.length > 0 ? (
+          <DynamicTable rows={subscriptions} columns={SUBSCRIPTION_COLUMNS} />
+        ) : (
+          <EvidenceGap reason="No subscription rows were returned for the watched ticker set." expected="Rows from /site/watchlist/subscriptions." title="Subscription evidence unavailable" />
+        )}
       </div>
 
       <form className="card" onSubmit={onUserSubmit}>
@@ -205,7 +235,7 @@ export default function FrontofficeWorkspace({ adminEmail }: { adminEmail: strin
               ))}
             </div>
           ) : (
-            <EmptyState>No user watchlist rows returned.</EmptyState>
+            <EvidenceGap reason="No rows were returned for this user watchlist lookup." expected="Rows from /site/watchlist?user_id=..." title="User watchlist unavailable" />
           )}
         </div>
         <div className="card compact-card">
@@ -224,7 +254,11 @@ export default function FrontofficeWorkspace({ adminEmail }: { adminEmail: strin
       <div className="card">
         <h2>Recent AI Research Runs</h2>
         <p className="small">Backend: GET /site/ai-research/runs?user_id=... Fields are rendered if returned; raw JSON is preserved per row.</p>
-        <DynamicTable rows={runs.map(addDerivedRunFields)} columns={RUN_COLUMNS} />
+        {runs.length > 0 ? (
+          <DynamicTable rows={runs.map(addDerivedRunFields)} columns={RUN_COLUMNS} />
+        ) : (
+          <EvidenceGap reason="No AI research runs were returned for this user lookup." expected="Rows from /site/ai-research/runs?user_id=..." title="AI research runs unavailable" />
+        )}
       </div>
 
       <div className="card">
@@ -251,19 +285,24 @@ export default function FrontofficeWorkspace({ adminEmail }: { adminEmail: strin
             </details>
           </>
         ) : (
-          <EmptyState>No run detail loaded.</EmptyState>
+          <EvidenceGap reason="No run detail has been loaded yet." expected="Provide user_id and run id for /site/ai-research/runs/{run_id}." title="Run detail unavailable" />
         )}
       </div>
 
       <div className="card">
         <h2>Missing Admin Contracts</h2>
-        <p className="small">These gaps block a complete Frontoffice/User Research Control surface.</p>
+        <EvidenceGap
+          reason="These backend contracts block a complete all-user frontoffice control surface."
+          expected="All-user admin runs, user model candidates, user search/list, usage/rate, moderation, alert delivery, and analytics summary contracts."
+        />
         <ul className="plain-list">
           {MISSING_ADMIN_CONTRACTS.map((gap) => (
             <li key={gap}>{gap}</li>
           ))}
         </ul>
       </div>
+        </>
+      )}
     </div>
   )
 }
@@ -276,4 +315,9 @@ function addDerivedRunFields(row: unknown): unknown {
     ...record,
     citations: Array.isArray(citations) ? citations.length : citations,
   }
+}
+
+function initialFrontofficeTab(): 'ai' | 'user' {
+  if (typeof window === 'undefined') return 'ai'
+  return window.location.hash === '#user-models' ? 'user' : 'ai'
 }

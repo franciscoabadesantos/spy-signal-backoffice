@@ -1,11 +1,8 @@
 'use client'
 
-type RowRecord = Record<string, unknown>
+import { asRecord, unwrapList, type RowRecord } from '@/lib/payload'
 
-export function asRecord(value: unknown): RowRecord | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  return value as RowRecord
-}
+export { asRecord }
 
 export function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
@@ -23,10 +20,7 @@ export function readString(row: unknown, keys: string[]): string {
 }
 
 export function readArrayPayload(payload: unknown, key: string): unknown[] {
-  if (Array.isArray(payload)) return payload
-  const record = asRecord(payload)
-  const nested = record?.[key]
-  return Array.isArray(nested) ? nested : []
+  return unwrapList(payload, [key])
 }
 
 export function formatUnknown(value: unknown): string {
@@ -42,6 +36,24 @@ export function JsonBlock({ value }: { value: unknown }) {
 
 export function EmptyState({ children }: { children: React.ReactNode }) {
   return <p className="empty-state small">{children}</p>
+}
+
+export function EvidenceGap({
+  reason,
+  expected,
+  title = 'Evidence not wired yet',
+}: {
+  reason?: React.ReactNode
+  expected?: React.ReactNode
+  title?: string
+}) {
+  return (
+    <div className="evidence-gap" role="note">
+      <strong>{title}</strong>
+      <div>{reason || 'The backend did not return evidence for this surface.'}</div>
+      {expected ? <div className="small">Expected: {expected}</div> : null}
+    </div>
+  )
 }
 
 export function ApiErrorBox({ error }: { error: string | null }) {

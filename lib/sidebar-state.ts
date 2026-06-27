@@ -55,11 +55,11 @@ export async function loadSidebarState(): Promise<SidebarState> {
     health: {
       data: dotForDataHealth(settledPayload(data)),
       research: dotForFailedRecent(settledPayload(research), ['experiments', 'items', 'results']),
-      signals: signals.status === 'fulfilled' && signals.value?.upstream.ok ? 'green' : 'gray',
-      registry: registry.status === 'fulfilled'
+      evaluation: signals.status === 'fulfilled' && signals.value?.upstream.ok ? 'green' : 'gray',
+      production: registry.status === 'fulfilled'
         ? (registry.value?.upstream.ok ? 'green' : 'red')
         : 'gray',
-      operations: failedJobCount > 0 ? 'red' : (jobs.status === 'fulfilled' && jobs.value?.upstream.ok ? 'green' : 'gray'),
+      frontoffice: 'gray',
       system: system.status === 'fulfilled' ? (system.value?.upstream.ok ? 'green' : 'red') : 'gray',
     },
     candidateCount: (readCount(candidatePayload, ['total', 'count']) ?? readItems(candidatePayload, ['candidates', 'items', 'results']).length) || undefined,
@@ -71,9 +71,9 @@ export function grayHealth(): SidebarHealth {
   return {
     data: 'gray',
     research: 'gray',
-    signals: 'gray',
-    registry: 'gray',
-    operations: 'gray',
+    evaluation: 'gray',
+    production: 'gray',
+    frontoffice: 'gray',
     system: 'gray',
   }
 }

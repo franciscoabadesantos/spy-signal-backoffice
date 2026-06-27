@@ -109,10 +109,10 @@ export default async function HomePage() {
       <div className="control-kpi-grid">
         <KpiTile href="/data" label="Data coverage" value={coverage === null ? '—' : String(coverage)} unit={coverage === null ? undefined : '%'} sub={dataPayload ? `${staleSources.length} sources stale` : 'unavailable'} tone={staleSources.length ? 'amber' : undefined} />
         <KpiTile href="/research" label="Research" value={experimentPayload ? String(runningExperiments) : '—'} sub={experimentPayload ? `${failedExperiments} failed` : 'unavailable'} tone={failedExperiments ? 'red' : undefined} />
-        <KpiTile href="/signals" label="Candidates" value={candidatePayload ? String(candidateRows.length) : '—'} sub={candidatePayload ? `${promoReady} promo-ready` : 'unavailable'} tone={promoReady ? 'green' : undefined} />
+        <KpiTile href="/evaluation" label="Candidates" value={candidatePayload ? String(candidateRows.length) : '—'} sub={candidatePayload ? `${promoReady} promo-ready` : 'unavailable'} tone={promoReady ? 'green' : undefined} />
         <KpiTile
-          href="/signals"
-          label="Official signal"
+          href="/production"
+          label="Live model"
           value={formatOfficialSignalValue({ label: officialLabel, ticker: officialTicker, direction: officialDirection })}
           sub={lastFlip ? <OfficialSignalSub direction={officialDirection} timestamp={officialTimestamp} /> : 'unavailable'}
         />
@@ -253,7 +253,7 @@ function buildActions(
     const id = readText(partialCandidate, ['candidate_id', 'id']) || 'candidate'
     actions.push({
       text: `${truncateId(id, 14)} is promo-ready but IC evidence missing`,
-      href: '/signals',
+      href: '/evaluation',
       sub: 'All other gates pass',
     })
   }
@@ -288,7 +288,7 @@ function buildFeed(
     })),
     ...signalHistory.map((row) => ({
       text: `Signal ${readText(row, ['ticker', 'symbol']) || 'SPY'} ${readText(row, ['direction', 'signal', 'stance']) || 'updated'}`,
-      href: '/signals',
+      href: '/evaluation',
       at: readText(row, ['signal_date', 'date', 'updated_at']),
       tone: 'blue' as const,
     })),
