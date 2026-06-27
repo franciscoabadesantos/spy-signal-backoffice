@@ -4,7 +4,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
 import { ExperimentTable, readCandidateId, type ResearchArtifact, type ResearchEvent, type ResearchExperiment } from '@/components/research/ExperimentTable'
-import { NewExperimentForm } from '@/components/research/NewExperimentForm'
+import { CrossSectionalExperimentForm, type CrossSectionalSubmissionResult } from '@/components/research/CrossSectionalExperimentForm'
 
 type Pagination = {
   limit: number
@@ -16,6 +16,7 @@ type Pagination = {
 export default function ResearchConsole({ adminEmail }: { adminEmail: string }) {
   const [experiments, setExperiments] = useState<ResearchExperiment[]>([])
   const [expandedExperimentId, setExpandedExperimentId] = useState<string | null>(null)
+  const [detailExperiment, setDetailExperiment] = useState<ResearchExperiment | null>(null)
   const [events, setEvents] = useState<ResearchEvent[]>([])
   const [artifacts, setArtifacts] = useState<ResearchArtifact[]>([])
   const [loadingExperiments, setLoadingExperiments] = useState(false)
@@ -60,31 +61,48 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
     setLoadingDetail(true)
     setError(null)
     try {
-      const [eventsResult, artifactsResult] = await Promise.allSettled([
-        requestClientJson(`/api/research/experiments/${encodeURIComponent(experimentId)}/events`),
-        requestClientJson(`/api/research/experiments/${encodeURIComponent(experimentId)}/artifacts`),
-      ])
-      setEvents(eventsResult.status === 'fulfilled' ? normalizeEvents(eventsResult.value) : [])
-      setArtifacts(artifactsResult.status === 'fulfilled' ? normalizeArtifacts(artifactsResult.value) : [])
-      if (eventsResult.status === 'rejected' || artifactsResult.status === 'rejected') {
-        setError('Experiment expanded, but one or more detail endpoints failed.')
-      }
+      await loadExperimentDetail(experimentId)
     } finally {
       setLoadingDetail(false)
     }
   }
 
+  async function loadExperimentDetail(experimentId: string) {
+    const [eventsResult, artifactsResult, detailResult] = await Promise.allSettled([
+      requestClientJson(`/api/research/experiments/${encodeURIComponent(experimentId)}/events`),
+      requestClientJson(`/api/research/experiments/${encodeURIComponent(experimentId)}/artifacts`),
+      requestClientJson(`/api/research/experiments/${encodeURIComponent(experimentId)}`),
+    ])
+    setEvents(eventsResult.status === 'fulfilled' ? normalizeEvents(eventsResult.value) : [])
+    setArtifacts(artifactsResult.status === 'fulfilled' ? normalizeArtifacts(artifactsResult.value) : [])
+    if (detailResult.status === 'fulfilled') {
+      setDetailExperiment(normalizeExperimentDetail(detailResult.value, { experiment_id: experimentId }))
+    } else {
+      setDetailExperiment(null)
+    }
+    if (eventsResult.status === 'rejected' || artifactsResult.status === 'rejected' || detailResult.status === 'rejected') {
+      setError('Experiment expanded, but one or more detail endpoints failed.')
+    }
+  }
+
   function closeExpandedRow() {
     setExpandedExperimentId(null)
+    setDetailExperiment(null)
     setEvents([])
     setArtifacts([])
   }
 
-  async function handleCreated(experiment: ResearchExperiment) {
+  async function handleCreated(result: CrossSectionalSubmissionResult) {
     await loadExperiments(0)
-    setExpandedExperimentId(experiment.experiment_id)
-    setEvents([])
-    setArtifacts([])
+    if (result.submission_type === 'experiment' && result.experiment_id) {
+      setExpandedExperimentId(result.experiment_id)
+      setLoadingDetail(true)
+      try {
+        await loadExperimentDetail(result.experiment_id)
+      } finally {
+        setLoadingDetail(false)
+      }
+    }
   }
 
   const loadExperimentsEffect = useEffectEvent(() => {
@@ -104,13 +122,15 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
         <div className="split-row">
           <div>
             <h1>Research</h1>
-            <p className="small">Official experiment pipeline and candidate-producing research runs.</p>
+            <p className="small">Launch catalog-driven cross-sectional experiments and inspect research runs.</p>
           </div>
           <div className="small">Admin: {adminEmail}</div>
         </div>
       </div>
 
       {error ? <div className="error">{error}</div> : null}
+
+      <CrossSectionalExperimentForm adminEmail={adminEmail} onCreated={handleCreated} />
 
       <div className="split-row">
         <div className="small">{loadingExperiments ? 'Refreshing experiments...' : 'Sorted by started date descending.'}</div>
@@ -123,6 +143,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
 
       <ExperimentTable
         artifacts={artifacts}
+        detailExperiment={detailExperiment}
         events={events}
         expandedExperimentId={expandedExperimentId}
         experiments={sortedExperiments}
@@ -135,8 +156,6 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
         <button className="secondary" type="button" disabled={loadingExperiments || !pagination?.has_more} onClick={() => void loadExperiments(offset + 80)}>Next page</button>
         {pagination ? <span className="small">Showing {experiments.length}. {pagination.total !== undefined ? `Total: ${pagination.total}` : ''}</span> : null}
       </div>
-
-      <NewExperimentForm adminEmail={adminEmail} onCreated={handleCreated} />
     </div>
   )
 }

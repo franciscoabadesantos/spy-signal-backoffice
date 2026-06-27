@@ -86,11 +86,12 @@ export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = f
     {
       label: 'Pipeline',
       items: [
-        { label: 'Signals', href: '/signals', dot: sidebarHealth.signals, badge: sidebarCandidateCount },
-        { label: 'Research', href: '/research', dot: sidebarHealth.research },
-        { label: 'Registry', href: '/registry', dot: sidebarHealth.registry },
+        { label: 'Research Launch', href: '/research', dot: sidebarHealth.research },
+        { label: 'Batch Results', href: '/research/batches', dot: sidebarHealth.research },
         { label: 'Cross-Sectional', href: '/signals/cross-sectional', dot: sidebarHealth.signals },
-        { label: 'Batches', href: '/research/batches', dot: sidebarHealth.research },
+        { label: 'Daily Inference', href: '/production/daily-inference', dot: sidebarHealth.operations },
+        { label: 'Signals', href: '/signals', dot: sidebarHealth.signals, badge: sidebarCandidateCount },
+        { label: 'Registry', href: '/registry', dot: sidebarHealth.registry },
       ],
     },
     {
@@ -109,7 +110,6 @@ export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = f
           dot: sidebarHealth.operations,
           badge: sidebarFailedJobCount ? `${sidebarFailedJobCount} fail` : undefined,
         },
-        { label: 'Daily Inference', href: '/production/daily-inference', dot: sidebarHealth.operations },
         { label: 'System', href: '/diagnostics', dot: sidebarHealth.system },
         { label: 'Contracts', href: '/contracts', dot: 'gray' },
       ],

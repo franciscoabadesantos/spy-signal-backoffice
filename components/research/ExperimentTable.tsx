@@ -48,6 +48,7 @@ type Props = {
   expandedExperimentId: string | null
   events: ResearchEvent[]
   artifacts: ResearchArtifact[]
+  detailExperiment?: ResearchExperiment | null
   loadingDetail: boolean
   onToggle: (experimentId: string) => void
 }
@@ -57,6 +58,7 @@ export function ExperimentTable({
   expandedExperimentId,
   events,
   artifacts,
+  detailExperiment,
   loadingDetail,
   onToggle,
 }: Props) {
@@ -123,6 +125,7 @@ export function ExperimentTable({
                         <ExpandedExperimentDetail
                           artifacts={artifacts}
                           events={events}
+                          experiment={detailExperiment?.experiment_id === experiment.experiment_id ? detailExperiment : experiment}
                           loading={loadingDetail}
                         />
                       </td>
@@ -146,16 +149,29 @@ export function ExperimentTable({
 function ExpandedExperimentDetail({
   artifacts,
   events,
+  experiment,
   loading,
 }: {
   artifacts: ResearchArtifact[]
   events: ResearchEvent[]
+  experiment: ResearchExperiment
   loading: boolean
 }) {
   if (loading) return <p className="small">Loading events and artifacts...</p>
+  const evalMetrics = readEvalMetrics(experiment)
 
   return (
     <div className="research-inline-detail" style={{ display: 'grid', gap: 16 }}>
+      {evalMetrics.length > 0 ? (
+        <div>
+          <h4 style={{ marginBottom: 8 }}>Evaluation</h4>
+          <div className="selection-summary">
+            {evalMetrics.map((metric) => (
+              <span key={metric.label}>{metric.label}: {formatMetric(metric.value)}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div>
         <h4 style={{ marginBottom: 8 }}>Event log</h4>
         {events.length ? (
@@ -318,6 +334,65 @@ function candidateArtifactReference(artifacts: unknown[]): string | null {
     if (reference && reference.toLowerCase().includes('candidate')) return reference
   }
   return null
+}
+
+function readEvalMetrics(experiment: ResearchExperiment): Array<{ label: string; value: number | string }> {
+  if (!isCompletedStatus(experiment.status)) return []
+  const detail = experimentDetail(experiment)
+  const result = asRecord(detail?.result_json) ?? asRecord(detail?.result) ?? asRecord(experiment.result_json) ?? asRecord(experiment.result)
+  const metricRecords = [
+    result,
+    asRecord(result?.metrics),
+    asRecord(result?.metric_evidence),
+    asRecord(result?.metrics_summary_json),
+    asRecord(result?.evaluation),
+    asRecord(result?.eval),
+    asRecord(result?.diagnostics),
+    detail,
+  ]
+  const backtestRecords = [
+    asRecord(result?.backtest),
+    asRecord(result?.backtest_result),
+    asRecord(result?.backtest_summary),
+    asRecord(result?.strategy_backtest),
+    ...metricRecords.map((record) => asRecord(record?.backtest)),
+  ]
+
+  return [
+    { label: 'rank-IC', value: readMetric(metricRecords, ['rank_ic', 'rankIC', 'ic_mean', 'mean_rank_ic']) },
+    { label: 'IC IR', value: readMetric(metricRecords, ['rank_ic_ir', 'rankICIR', 'ic_ir']) },
+    { label: 'Top-bottom', value: readMetric(metricRecords, ['top_bottom_spread', 'topBottomSpread', 'spread', 'long_short_spread']) },
+    { label: 'MCPT p', value: readMetric(metricRecords, ['mcpt_p_value', 'mcptPValue', 'p_value', 'mcpt_p']) },
+    { label: 'Backtest IR', value: readMetric(backtestRecords, ['information_ratio', 'ir', 'backtest_ir']) },
+    { label: 'Return vs bench', value: readMetric(backtestRecords, ['return_vs_benchmark', 'excess_return', 'benchmark_excess_return']) },
+    { label: 'Max drawdown', value: readMetric(backtestRecords, ['max_drawdown', 'maxDrawdown']) },
+    { label: 'Avg turnover', value: readMetric(backtestRecords, ['avg_turnover', 'turnover', 'mean_turnover']) },
+  ].filter((metric): metric is { label: string; value: number | string } => metric.value !== null)
+}
+
+function readMetric(records: Array<Record<string, unknown> | null>, keys: string[]): number | string | null {
+  for (const record of records) {
+    if (!record) continue
+    for (const key of keys) {
+      const value = record[key]
+      if (typeof value === 'number' && Number.isFinite(value)) return value
+      if (typeof value === 'string' && value.trim()) {
+        const parsed = Number(value)
+        return Number.isFinite(parsed) ? parsed : value.trim()
+      }
+    }
+  }
+  return null
+}
+
+function formatMetric(value: number | string): string {
+  if (typeof value === 'string') return value
+  if (Math.abs(value) >= 100) return value.toFixed(1)
+  return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+}
+
+function isCompletedStatus(status?: string | null): boolean {
+  return ['done', 'completed', 'succeeded', 'success'].includes(String(status ?? '').trim().toLowerCase())
 }
 
 function buildEventLogItems(events: ResearchEvent[]): EventLogItem[] {

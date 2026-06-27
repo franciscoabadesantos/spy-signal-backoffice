@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireAdminUser } from '@/lib/admin-auth'
-import BatchSubmitWorkspace from './ui'
+import BatchResultsWorkspace from './ui'
 
 export default async function ResearchBatchesPage() {
   const admin = await requireAdminUser()
@@ -10,7 +10,7 @@ export default async function ResearchBatchesPage() {
         <div className="split-row">
           <div>
             <h1>Research Batches</h1>
-            <p className="small">Launch and inspect cross-sectional batch research runs from backend-advertised axes.</p>
+            <p className="small">Inspect cross-sectional batch results. Launch new grids from Research.</p>
           </div>
           <div className="meta">
             <Link href="/research" className="text-link">Experiments</Link>
@@ -18,7 +18,7 @@ export default async function ResearchBatchesPage() {
           </div>
         </div>
       </div>
-      <BatchSubmitWorkspace adminEmail={admin.email} />
+      <BatchResultsWorkspace />
     </div>
   )
 }
