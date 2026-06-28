@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { Fragment, useState, type CSSProperties } from 'react'
 import { CopyableId } from '@/components/ui/CopyableId'
 import { formatDate } from '@/lib/format'
-import { EvidenceGap } from '@/app/components/workspace-data'
+import { EvidenceGap, JsonBlock } from '@/app/components/workspace-data'
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
@@ -43,6 +43,7 @@ export type ResearchArtifact = {
   artifact_type?: string | null
   artifact_ref?: string | null
   artifact_hash?: string | null
+  payload_json?: unknown
   [key: string]: unknown
 }
 
@@ -197,13 +198,7 @@ function ExpandedExperimentDetail({
       <div>
         <h4 style={{ marginBottom: 8 }}>Event log</h4>
         {events.length ? (
-          <div style={eventLogStyle}>
-            {buildEventLogItems(events).map((item, index) => (
-              item.kind === 'summary'
-                ? <EventSummaryLine item={item} key={`summary-${index}-${item.date}`} />
-                : <EventErrorBlock item={item} key={item.event.event_id ?? `error-${index}`} />
-            ))}
-          </div>
+          <EventLog events={events} />
         ) : (
           <EvidenceGap
             reason="No event rows were returned for this run."
@@ -215,15 +210,9 @@ function ExpandedExperimentDetail({
       <div>
         <h4 style={{ marginBottom: 8 }}>Artifacts</h4>
         {artifacts.length ? (
-          <div style={{ display: 'grid', gap: 0 }}>
+          <div style={{ display: 'grid', gap: 8 }}>
             {artifacts.map((artifact, index) => (
-              <div style={compactLineStyle} key={artifact.artifact_id ?? `${artifact.artifact_ref}-${index}`}>
-                <div style={compactTextStyle}>
-                  <strong>{artifactName(artifact)}</strong>
-                  <span style={mutedTruncateStyle}>{renderText(artifact.artifact_ref ?? artifact.artifact_hash)}</span>
-                </div>
-                <div className="small" style={compactDateStyle}>{formatDate(artifact.created_at ?? '')}</div>
-              </div>
+              <ArtifactRow artifact={artifact} key={artifact.artifact_id ?? `${artifact.artifact_ref}-${index}`} />
             ))}
           </div>
         ) : (
@@ -239,7 +228,7 @@ function ExpandedExperimentDetail({
 }
 
 type EventLogItem =
-  | { kind: 'summary'; count: number; date: string }
+  | { kind: 'step'; event: ResearchEvent }
   | { kind: 'error'; event: ResearchEvent }
 
 const eventLogStyle: CSSProperties = {
@@ -273,6 +262,35 @@ const mutedTruncateStyle: CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
+const eventRowStyle: CSSProperties = {
+  alignItems: 'center',
+  borderBottom: '1px solid #e2e8f0',
+  display: 'grid',
+  gap: 8,
+  gridTemplateColumns: 'minmax(180px, 1fr) minmax(90px, 140px) minmax(150px, 190px)',
+  minHeight: 32,
+  padding: '5px 0',
+}
+
+const artifactDetailsStyle: CSSProperties = {
+  border: '1px solid #e2e8f0',
+  borderRadius: 6,
+  background: '#fff',
+}
+
+const artifactSummaryStyle: CSSProperties = {
+  cursor: 'pointer',
+  listStyle: 'none',
+  padding: '8px 10px',
+}
+
+const artifactJsonStyle: CSSProperties = {
+  borderTop: '1px solid #e2e8f0',
+  maxHeight: 420,
+  overflow: 'auto',
+  padding: 10,
+}
+
 const compactDateStyle: CSSProperties = {
   marginLeft: 'auto',
   minWidth: 150,
@@ -285,6 +303,49 @@ function artifactName(artifact: ResearchArtifact): string {
   if (!ref) return 'Artifact'
   const text = String(ref)
   return text.split('/').filter(Boolean).at(-1) ?? text
+}
+
+function ArtifactRow({ artifact }: { artifact: ResearchArtifact }) {
+  const [open, setOpen] = useState(false)
+  const payload = artifactPayload(artifact)
+
+  return (
+    <details
+      className="research-artifact-row"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      style={artifactDetailsStyle}
+    >
+      <summary style={artifactSummaryStyle}>
+        <div style={compactLineStyle}>
+          <div style={compactTextStyle}>
+            <strong>{renderText(artifact.artifact_type ?? artifactName(artifact))}</strong>
+            <span style={mutedTruncateStyle}>{renderText(artifact.artifact_ref ?? artifact.artifact_hash)}</span>
+          </div>
+          <div className="small" style={compactDateStyle}>{formatDate(artifact.created_at ?? '')}</div>
+        </div>
+      </summary>
+      {open ? (
+        <div style={artifactJsonStyle}>
+          {payload === undefined ? (
+            <EvidenceGap
+              reason="This artifact row did not include payload_json."
+              expected="payload_json on the artifact row returned by /analyst/research/experiments/{id}/artifacts."
+              title="Artifact payload unavailable"
+            />
+          ) : (
+            <JsonBlock value={payload} />
+          )}
+        </div>
+      ) : null}
+    </details>
+  )
+}
+
+function artifactPayload(artifact: ResearchArtifact): unknown {
+  if ('payload_json' in artifact) return artifact.payload_json
+  if ('payload' in artifact) return artifact.payload
+  if ('json' in artifact) return artifact.json
+  return undefined
 }
 
 function StatusBadge({ status }: { status?: string | null }) {
@@ -385,47 +446,39 @@ function isCompletedStatus(status?: string | null): boolean {
   return ['done', 'completed', 'succeeded', 'success'].includes(String(status ?? '').trim().toLowerCase())
 }
 
-function buildEventLogItems(events: ResearchEvent[]): EventLogItem[] {
-  const items: EventLogItem[] = []
-  let pendingHappyEvents: ResearchEvent[] = []
+function EventLog({ events }: { events: ResearchEvent[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const visibleEvents = expanded ? events : events.slice(0, 16)
+  const hiddenCount = events.length - visibleEvents.length
 
-  for (const event of events) {
-    if (isErrorEvent(event)) {
-      flushHappyEvents(items, pendingHappyEvents)
-      pendingHappyEvents = []
-      items.push({ kind: 'error', event })
-      continue
-    }
-
-    if (isHappyPathEvent(event)) {
-      pendingHappyEvents.push(event)
-      continue
-    }
-
-    flushHappyEvents(items, pendingHappyEvents)
-    pendingHappyEvents = []
-  }
-
-  flushHappyEvents(items, pendingHappyEvents)
-  return items
-}
-
-function flushHappyEvents(items: EventLogItem[], events: ResearchEvent[]) {
-  if (events.length === 0) return
-  const lastEvent = events.at(-1)
-  items.push({
-    kind: 'summary',
-    count: events.length,
-    date: formatSummaryDate(lastEvent?.created_at),
-  })
-}
-
-function EventSummaryLine({ item }: { item: Extract<EventLogItem, { kind: 'summary' }> }) {
-  const label = item.count === 1 ? '1 step completed' : `${item.count} steps completed`
   return (
-    <div style={summaryLineStyle}>
-      <span aria-hidden="true" style={greenDotStyle} />
-      <span>{label} · {item.date}</span>
+    <div style={eventLogStyle}>
+      {visibleEvents.map((event, index) => {
+        const item: EventLogItem = isErrorEvent(event) ? { kind: 'error', event } : { kind: 'step', event }
+        return item.kind === 'error'
+          ? <EventErrorBlock item={item} key={event.event_id ?? `error-${index}`} />
+          : <EventStepRow event={item.event} key={event.event_id ?? `event-${index}`} />
+      })}
+      {hiddenCount > 0 ? (
+        <button className="text-link" type="button" onClick={() => setExpanded(true)} style={showMoreButtonStyle}>
+          Show {hiddenCount} more steps
+        </button>
+      ) : null}
+      {expanded && events.length > 16 ? (
+        <button className="text-link" type="button" onClick={() => setExpanded(false)} style={showMoreButtonStyle}>
+          Show fewer steps
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function EventStepRow({ event }: { event: ResearchEvent }) {
+  return (
+    <div className="research-event-row" style={eventRowStyle}>
+      <strong style={mutedTruncateStyle}>{renderText(event.step ?? event.event_type)}</strong>
+      <span><StatusBadge status={event.status ?? event.event_type} /></span>
+      <span className="small" style={compactDateStyle}>{formatDate(event.created_at ?? '')}</span>
     </div>
   )
 }
@@ -456,23 +509,6 @@ function EventErrorBlock({ item }: { item: Extract<EventLogItem, { kind: 'error'
       ) : null}
     </div>
   )
-}
-
-const summaryLineStyle: CSSProperties = {
-  alignItems: 'center',
-  color: '#64748b',
-  display: 'flex',
-  gap: 8,
-  minHeight: 28,
-  padding: '3px 0',
-}
-
-const greenDotStyle: CSSProperties = {
-  background: '#16a34a',
-  borderRadius: 999,
-  flex: '0 0 auto',
-  height: 8,
-  width: 8,
 }
 
 const errorBlockStyle: CSSProperties = {
@@ -531,11 +567,6 @@ const showMoreButtonStyle: CSSProperties = {
   width: 'auto',
 }
 
-function isHappyPathEvent(event: ResearchEvent): boolean {
-  const type = eventName(event)
-  return !isErrorEvent(event) && (type.endsWith('_completed') || type.endsWith('_started'))
-}
-
 function isErrorEvent(event: ResearchEvent): boolean {
   const text = `${eventName(event)} ${String(event.message ?? '').toLowerCase()}`
   return text.includes('_failed') || text.includes('_error') || text.includes('error') || text.includes('failed') || text.includes('failure')
@@ -543,11 +574,6 @@ function isErrorEvent(event: ResearchEvent): boolean {
 
 function eventName(event: ResearchEvent): string {
   return String(event.event_type ?? event.step ?? '').trim().toLowerCase()
-}
-
-function formatSummaryDate(value?: string | null): string {
-  if (!value) return '—'
-  return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 function isLongErrorMessage(message: string): boolean {

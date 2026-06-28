@@ -410,19 +410,27 @@ function ChartWorkspace({
     <main className="workspace-column workspace-pane">
       <div className="chart-selector-row">
         <div>
-          <h2>Evidence series</h2>
-          <p className="small">Scan every backend series, then open one in the full chart.</p>
+          <h2>{selectedRow ? labelFromKey(activeSeries) : 'Evidence chart'}</h2>
+          <p className="small">Full chart for the active evidence series.</p>
         </div>
         <span className="small">{selectedRow ? selectedRow.displayId : 'Select a candidate'}</span>
       </div>
-      <EvidenceSeriesGrid
-        activeSeries={activeSeries}
-        report={report}
-        selectedRow={selectedRow}
-        setActiveSeries={setActiveSeries}
-      />
       <ChartPanel seriesKey={activeSeries} report={report} selectedRow={selectedRow} />
       {selectedRow ? <MetricsRow report={report} selectedRow={selectedRow} /> : null}
+      {selectedRow ? (
+        <section className="series-scanner">
+          <div className="series-scanner-heading">
+            <h3>Series scanner</h3>
+            <p className="small">Click a preview to change the full chart.</p>
+          </div>
+          <EvidenceSeriesGrid
+            activeSeries={activeSeries}
+            report={report}
+            selectedRow={selectedRow}
+            setActiveSeries={setActiveSeries}
+          />
+        </section>
+      ) : null}
     </main>
   )
 }
@@ -460,7 +468,7 @@ function EvidenceSeriesGrid({
               <SparklinePreview points={chartPoints} />
             ) : (
               <span className="series-gap-card">
-                <span>EvidenceGap</span>
+                <span>No data</span>
                 <small>{gap?.message ?? 'No series points returned.'}</small>
               </span>
             )}
@@ -591,13 +599,23 @@ function buildChartTicks(points: ChartPoint[], plotWidth: number, left: number):
 }
 
 function MetricsRow({ report, selectedRow }: { report: SignalEvaluationReport | null; selectedRow: ComparisonRow | null }) {
-  const metrics = report?.metrics ?? selectedRow?.candidate.metrics ?? {}
+  const metricRecords = [
+    report?.metrics,
+    report?.metrics_summary_json,
+    report?.robustness_summary_json,
+    selectedRow?.candidate.metrics,
+  ]
   const items = [
-    ['Sharpe', metricText(metrics, ['sharpe'])],
-    ['Rank IC', metricText(metrics, ['rank_ic', 'ic', 'ic_mean', 'mean_ic', 'ic_latest'])],
-    ['Max DD', metricText(metrics, ['max_drawdown', 'drawdown'])],
-    ['Ann. return', metricText(metrics, ['annual_return', 'ann_return', 'cagr'])],
-    ['Turnover', metricText(metrics, ['turnover'])],
+    ['Rank IC', metricTextFromRecords(metricRecords, ['rank_ic', 'mean_rank_ic', 'ic_mean', 'mean_ic', 'ic_latest'])],
+    ['IC IR', metricTextFromRecords(metricRecords, ['rank_ic_ir', 'rankICIR', 'ic_ir'])],
+    ['Top-bottom spread', metricTextFromRecords(metricRecords, ['top_bottom_spread', 'topBottomSpread', 'long_short_spread', 'spread'])],
+    ['MCPT p-value', metricTextFromRecords(metricRecords, ['mcpt_p_value', 'mcptPValue', 'mcpt_p', 'p_value'])],
+    ['Hit rate', metricTextFromRecords(metricRecords, ['hit_rate', 'mean_hit_rate', 'directional_hit_rate'])],
+    ['Fold +IC fraction', metricTextFromRecords(metricRecords, ['fold_positive_ic_fraction', 'folds_positive_ic_fraction', 'positive_ic_fraction', 'positive_fold_fraction'])],
+    ['Sharpe', metricTextFromRecords(metricRecords, ['sharpe'])],
+    ['Max DD', metricTextFromRecords(metricRecords, ['max_drawdown', 'drawdown'])],
+    ['Ann. return', metricTextFromRecords(metricRecords, ['annual_return', 'ann_return', 'cagr'])],
+    ['Turnover', metricTextFromRecords(metricRecords, ['turnover', 'avg_turnover', 'mean_turnover'])],
   ]
   const metricsUnavailable = Boolean(report) && items.every(([, value]) => value === '—')
   return (
@@ -791,7 +809,7 @@ function SummaryCard({ title, value }: { title: string; value?: Record<string, u
       <h3>{title}</h3>
       {value ? (
         <div className="field-grid">
-          {Object.entries(value).slice(0, 8).map(([key, item]) => (
+          {Object.entries(value).slice(0, 6).map(([key, item]) => (
             <MetricField key={key} label={key} value={formatMetricValue(item)} />
           ))}
         </div>
@@ -1059,6 +1077,28 @@ function metricText(record: Record<string, unknown>, keys: string[]): string {
     return String(value)
   }
   return '—'
+}
+
+function metricTextFromRecords(records: Array<Record<string, unknown> | null | undefined>, keys: string[]): string {
+  for (const record of records) {
+    const value = readMetricValue(record, keys)
+    if (value !== null) return formatMetricValue(value)
+  }
+  return '—'
+}
+
+function readMetricValue(record: Record<string, unknown> | null | undefined, keys: string[], depth = 0): unknown | null {
+  if (!record || depth > 3) return null
+  for (const key of keys) {
+    const value = record[key]
+    if (value !== null && value !== undefined && value !== '') return value
+  }
+  for (const value of Object.values(record)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const nested = readMetricValue(value as Record<string, unknown>, keys, depth + 1)
+    if (nested !== null) return nested
+  }
+  return null
 }
 
 function labelFromKey(key: string): string {

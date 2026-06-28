@@ -122,7 +122,6 @@ export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = f
           badge: sidebarFailedJobCount ? `${sidebarFailedJobCount} fail` : undefined,
         },
         { label: 'Contracts', href: '/contracts', dot: 'gray' },
-        { label: 'Analyst smoke tests', href: '/analyst', dot: 'gray' },
         { label: 'System', href: '/diagnostics', dot: sidebarHealth.system },
       ],
     },
