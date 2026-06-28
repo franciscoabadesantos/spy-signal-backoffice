@@ -1260,6 +1260,53 @@ details summary {
   color: #065f46;
 }
 
+.picks-workspace {
+  min-width: 0;
+  overflow: clip;
+}
+
+.picks-date-controls {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.picks-date-controls button,
+.picks-date-controls select {
+  min-height: 34px;
+}
+
+.picks-table-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+  min-width: 0;
+}
+
+.picks-table-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.picks-table-panel h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.picks-table td,
+.picks-table th {
+  white-space: nowrap;
+}
+
+.picks-entity-cell {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .debug-details {
   margin-top: 4px;
 }
@@ -2272,7 +2319,8 @@ details summary {
   .compare-grid,
   .compare-field-grid,
   .template-picker,
-  .inline-filter {
+  .inline-filter,
+  .picks-table-grid {
     grid-template-columns: 1fr;
   }
 

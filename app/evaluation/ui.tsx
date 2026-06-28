@@ -29,6 +29,30 @@ type SignalEvaluationSeries = {
   gaps?: SignalEvaluationGap[]
 }
 
+type SignalEvaluationPickRow = {
+  entity_id: string
+  rank: number
+  score: number
+  percentile: number
+  selected: boolean
+}
+
+type SignalEvaluationPickDate = {
+  date: string
+  top: SignalEvaluationPickRow[]
+  bottom: SignalEvaluationPickRow[]
+}
+
+type SignalEvaluationPicks = {
+  contract_version?: string
+  top_k: number
+  bottom_k: number
+  dates: SignalEvaluationPickDate[]
+  gaps?: SignalEvaluationGap[]
+}
+
+const EMPTY_PICK_DATES: SignalEvaluationPickDate[] = []
+
 type SignalEvaluationLinks = {
   research_experiment_id?: string | null
   registry_candidate_id?: string | null
@@ -73,6 +97,7 @@ type SignalEvaluationReport = {
   lineage?: Record<string, unknown>
   artifacts?: Array<Record<string, unknown>>
   series?: Record<string, SignalEvaluationSeries>
+  picks?: SignalEvaluationPicks
   gaps?: SignalEvaluationGap[]
   raw_evidence?: Record<string, unknown>
 }
@@ -274,6 +299,7 @@ export default function EvaluationWorkspace({ adminEmail }: { adminEmail: string
         />
       </section>
 
+      <PicksWorkspace report={selectedReport} selectedRow={selectedRow} />
       <CompareWorkspace rows={compareRows} />
     </div>
   )
@@ -723,6 +749,118 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   )
 }
 
+function PicksWorkspace({ report, selectedRow }: { report: SignalEvaluationReport | null; selectedRow: ComparisonRow | null }) {
+  const picks = report?.picks
+  const dates = Array.isArray(picks?.dates) ? picks.dates : EMPTY_PICK_DATES
+  const [selectedDate, setSelectedDate] = useState<string>('')
+  const latestDate = dates.at(-1)?.date ?? ''
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSelectedDate((current) => {
+        if (current && dates.some((item) => item.date === current)) return current
+        return latestDate
+      })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [dates, latestDate])
+
+  if (!selectedRow) {
+    return (
+      <section className="card picks-workspace" id="picks">
+        <h2>Model picks - what it selected</h2>
+        <p className="small">Select a candidate.</p>
+      </section>
+    )
+  }
+
+  if (!picks || dates.length === 0) {
+    const gap = Array.isArray(picks?.gaps) ? picks.gaps[0] : null
+    return (
+      <section className="card picks-workspace" id="picks">
+        <h2>Model picks - what it selected</h2>
+        <EvidenceGap
+          reason={gap?.message ?? 'The backend did not return picks for this candidate.'}
+          expected={gap?.expected ?? 'picks.dates from the Signal Evaluation candidate report.'}
+          title="Model picks unavailable"
+        />
+      </section>
+    )
+  }
+
+  const activeDate = dates.find((item) => item.date === selectedDate) ?? dates.at(-1)
+  const activeIndex = activeDate ? dates.findIndex((item) => item.date === activeDate.date) : -1
+  const previousDate = activeIndex > 0 ? dates[activeIndex - 1]?.date : ''
+  const nextDate = activeIndex >= 0 && activeIndex < dates.length - 1 ? dates[activeIndex + 1]?.date : ''
+
+  return (
+    <section className="card picks-workspace" id="picks">
+      <div className="split-row">
+        <div>
+          <h2>Model picks - what it selected</h2>
+          <p className="small">Top {picks.top_k} / bottom {picks.bottom_k} per date.</p>
+        </div>
+        <div className="picks-date-controls">
+          <button className="secondary" type="button" disabled={!previousDate} onClick={() => setSelectedDate(previousDate)}>Previous</button>
+          <div>
+            <label htmlFor="picksDate">Date</label>
+            <select id="picksDate" value={activeDate?.date ?? ''} onChange={(event) => setSelectedDate(event.target.value)}>
+              {dates.map((item) => (
+                <option key={item.date} value={item.date}>{formatChartDate(item.date)}</option>
+              ))}
+            </select>
+          </div>
+          <button className="secondary" type="button" disabled={!nextDate} onClick={() => setSelectedDate(nextDate)}>Next</button>
+        </div>
+      </div>
+
+      {activeDate ? (
+        <div className="picks-table-grid">
+          <PicksTable rows={activeDate.top} title="Top picks (selected)" />
+          <PicksTable rows={activeDate.bottom} title="Bottom" />
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function PicksTable({ rows, title }: { rows: SignalEvaluationPickRow[]; title: string }) {
+  return (
+    <div className="picks-table-panel">
+      <h3>{title}</h3>
+      <div className="table-wrap">
+        <table className="registry-table picks-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Ticker</th>
+              <th>Score</th>
+              <th>Percentile</th>
+              <th>Selected</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={`${title}-${row.entity_id}-${index}`}>
+                <td>{index + 1}</td>
+                <td className="picks-entity-cell">{row.entity_id}</td>
+                <td>{formatPickNumber(row.score)}</td>
+                <td>{formatPercentile(row.percentile)}</td>
+                <td>{row.selected ? <span className="badge completed">selected</span> : '—'}</td>
+              </tr>
+            ))}
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={5}>No rows returned for this side.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function CompareWorkspace({ rows }: { rows: ComparisonRow[] }) {
   if (rows.length < 2) {
     return (
@@ -1123,6 +1261,19 @@ function formatMetricValue(value: unknown): string {
   if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(4)
   if (typeof value === 'string' || typeof value === 'boolean') return String(value)
   return JSON.stringify(value)
+}
+
+function formatPickNumber(value: number): string {
+  if (!Number.isFinite(value)) return '—'
+  if (Math.abs(value) >= 100) return value.toFixed(2)
+  if (Math.abs(value) >= 10) return value.toFixed(3)
+  return value.toFixed(4)
+}
+
+function formatPercentile(value: number): string {
+  if (!Number.isFinite(value)) return '—'
+  const percent = Math.abs(value) <= 1 ? value * 100 : value
+  return `${percent.toFixed(1)}%`
 }
 
 function formatAxisValue(value: number): string {
