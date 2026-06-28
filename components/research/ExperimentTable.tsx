@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { Fragment, useState, type CSSProperties } from 'react'
 import { CopyableId } from '@/components/ui/CopyableId'
 import { formatDate } from '@/lib/format'
+import { readApiError } from '@/lib/api-error'
+import { requestClientJson } from '@/lib/client-json'
 import { EvidenceGap, JsonBlock } from '@/app/components/workspace-data'
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
@@ -43,7 +45,6 @@ export type ResearchArtifact = {
   artifact_type?: string | null
   artifact_ref?: string | null
   artifact_hash?: string | null
-  payload_json?: unknown
   [key: string]: unknown
 }
 
@@ -212,7 +213,11 @@ function ExpandedExperimentDetail({
         {artifacts.length ? (
           <div style={{ display: 'grid', gap: 8 }}>
             {artifacts.map((artifact, index) => (
-              <ArtifactRow artifact={artifact} key={artifact.artifact_id ?? `${artifact.artifact_ref}-${index}`} />
+              <ArtifactRow
+                artifact={artifact}
+                experimentId={experiment.experiment_id}
+                key={artifact.artifact_id ?? `${artifact.artifact_ref}-${index}`}
+              />
             ))}
           </div>
         ) : (
@@ -305,14 +310,53 @@ function artifactName(artifact: ResearchArtifact): string {
   return text.split('/').filter(Boolean).at(-1) ?? text
 }
 
-function ArtifactRow({ artifact }: { artifact: ResearchArtifact }) {
+function ArtifactRow({ artifact, experimentId }: { artifact: ResearchArtifact; experimentId: string }) {
   const [open, setOpen] = useState(false)
-  const payload = artifactPayload(artifact)
+  const [loading, setLoading] = useState(false)
+  const [payload, setPayload] = useState<unknown>(undefined)
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function handleToggle(event: React.ToggleEvent<HTMLDetailsElement>) {
+    const nextOpen = event.currentTarget.open
+    setOpen(nextOpen)
+    if (nextOpen && !loaded && !loading) {
+      void loadArtifactPayload()
+    }
+  }
+
+  async function loadArtifactPayload() {
+    const artifactId = artifact.artifact_id?.trim()
+    if (!artifactId) {
+      setError('Artifact id is missing; payload cannot be loaded.')
+      setLoaded(true)
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    try {
+      const response = await requestClientJson(
+        `/api/research/experiments/${encodeURIComponent(experimentId)}/artifacts/${encodeURIComponent(artifactId)}`
+      )
+      const nextPayload = artifactPayloadFromResponse(response)
+      if (nextPayload === undefined) {
+        setError('Artifact payload_json was not present in the detail response.')
+        return
+      }
+      setPayload(nextPayload)
+      setLoaded(true)
+    } catch (requestError) {
+      setError(readApiError(requestError, 'Failed to load artifact payload.'))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <details
       className="research-artifact-row"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onToggle={handleToggle}
       style={artifactDetailsStyle}
     >
       <summary style={artifactSummaryStyle}>
@@ -326,26 +370,21 @@ function ArtifactRow({ artifact }: { artifact: ResearchArtifact }) {
       </summary>
       {open ? (
         <div style={artifactJsonStyle}>
-          {payload === undefined ? (
-            <EvidenceGap
-              reason="This artifact row did not include payload_json."
-              expected="payload_json on the artifact row returned by /analyst/research/experiments/{id}/artifacts."
-              title="Artifact payload unavailable"
-            />
-          ) : (
+          {loading ? <p className="small">Loading artifact...</p> : null}
+          {error ? <div className="error">{error}</div> : null}
+          {!loading && !error && loaded ? (
             <JsonBlock value={payload} />
-          )}
+          ) : null}
         </div>
       ) : null}
     </details>
   )
 }
 
-function artifactPayload(artifact: ResearchArtifact): unknown {
-  if ('payload_json' in artifact) return artifact.payload_json
-  if ('payload' in artifact) return artifact.payload
-  if ('json' in artifact) return artifact.json
-  return undefined
+function artifactPayloadFromResponse(response: unknown): unknown {
+  const record = asRecord(response)
+  const artifact = asRecord(record?.artifact) ?? record
+  return artifact?.payload_json
 }
 
 function StatusBadge({ status }: { status?: string | null }) {
