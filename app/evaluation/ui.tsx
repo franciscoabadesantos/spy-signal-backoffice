@@ -35,6 +35,7 @@ type SignalEvaluationPickRow = {
   score: number
   percentile: number
   selected: boolean
+  reason?: string | null
 }
 
 type SignalEvaluationPickDate = {
@@ -816,7 +817,7 @@ function PicksWorkspace({ report, selectedRow }: { report: SignalEvaluationRepor
 
       {activeDate ? (
         <div className="picks-table-grid">
-          <PicksTable rows={activeDate.top} title="Top picks (selected)" />
+          <PicksTable rows={activeDate.top} title="Top picks (selected)" variant="top" />
           <PicksTable rows={activeDate.bottom} title="Bottom" />
         </div>
       ) : null}
@@ -824,7 +825,7 @@ function PicksWorkspace({ report, selectedRow }: { report: SignalEvaluationRepor
   )
 }
 
-function PicksTable({ rows, title }: { rows: SignalEvaluationPickRow[]; title: string }) {
+function PicksTable({ rows, title, variant = 'bottom' }: { rows: SignalEvaluationPickRow[]; title: string; variant?: 'top' | 'bottom' }) {
   return (
     <div className="picks-table-panel">
       <h3>{title}</h3>
@@ -836,19 +837,26 @@ function PicksTable({ rows, title }: { rows: SignalEvaluationPickRow[]; title: s
               <th>Ticker</th>
               <th>Score</th>
               <th>Percentile</th>
-              <th>Selected</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
-              <tr key={`${title}-${row.entity_id}-${index}`}>
-                <td>{index + 1}</td>
-                <td className="picks-entity-cell">{row.entity_id}</td>
-                <td>{formatPickNumber(row.score)}</td>
-                <td>{formatPercentile(row.percentile)}</td>
-                <td>{row.selected ? <span className="badge completed">selected</span> : '—'}</td>
-              </tr>
-            ))}
+            {rows.map((row, index) => {
+              const status = pickStatus(row)
+              const flagged = variant === 'top' && !row.selected
+              return (
+                <tr key={`${title}-${row.entity_id}-${index}`} className={flagged ? 'picks-row-flagged' : undefined}>
+                  <td>{index + 1}</td>
+                  <td className="picks-entity-cell">
+                    {flagged ? <span className="picks-attention-dot" aria-label="High-ranked but not allocated" /> : null}
+                    {row.entity_id}
+                  </td>
+                  <td>{formatPickNumber(row.score)}</td>
+                  <td>{formatPercentile(row.percentile)}</td>
+                  <td><span className={`badge ${status.className}`}>{status.label}</span></td>
+                </tr>
+              )
+            })}
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={5}>No rows returned for this side.</td>
@@ -1274,6 +1282,14 @@ function formatPercentile(value: number): string {
   if (!Number.isFinite(value)) return '—'
   const percent = Math.abs(value) <= 1 ? value * 100 : value
   return `${percent.toFixed(1)}%`
+}
+
+function pickStatus(row: SignalEvaluationPickRow): { label: string; className: string } {
+  if (row.selected || row.reason === 'top_k_selected') return { label: 'Selected', className: 'completed' }
+  if (row.reason === 'outside_top_k') return { label: 'Outside top-K', className: 'muted' }
+  if (row.reason === 'not_eligible') return { label: 'Not eligible', className: 'backend-gap' }
+  if (row.reason) return { label: row.reason, className: 'muted' }
+  return { label: 'Not selected', className: 'muted' }
 }
 
 function formatAxisValue(value: number): string {

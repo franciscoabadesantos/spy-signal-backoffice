@@ -509,6 +509,12 @@ button:disabled {
   border-color: #cbd5e1;
 }
 
+.badge.muted {
+  background: #f8fafc;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
 .badge.running {
   background: #fff7ed;
   color: #b45309;
@@ -1302,9 +1308,24 @@ details summary {
   white-space: nowrap;
 }
 
+.picks-row-flagged {
+  background: #fffbeb;
+  color: #713f12;
+}
+
 .picks-entity-cell {
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.picks-attention-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 999px;
+  background: #f59e0b;
+  vertical-align: middle;
 }
 
 .debug-details {
