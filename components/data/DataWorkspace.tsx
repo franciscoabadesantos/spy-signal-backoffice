@@ -311,7 +311,7 @@ export default function DataWorkspace({ adminEmail, initialDomain, initialEntity
               ) : (
                 <>
                   <CoverageSummary coverage={visibleCoverage} loading={coverageLoading} />
-                  <MonthCalendar coverage={visibleCoverage} month={month} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
+                  <MonthCalendar coverage={visibleCoverage} loading={coverageLoading} month={month} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
                   {isDailyScanDomain(selected.domain) ? (
                     <GapScanPanel key={`${selected.domain}-${selected.entity_key}`} selected={selected} />
                   ) : null}
@@ -347,7 +347,27 @@ function KpiCard({ label, value, sub }: { label: string; value: string; sub: str
 }
 
 function CoverageSummary({ coverage, loading }: { coverage: CoverageResponse | null; loading: boolean }) {
-  if (loading) return <div className="coverage-summary loading">Loading month coverage...</div>
+  if (loading) {
+    return (
+      <div className="coverage-summary loading" aria-label="Loading month coverage">
+        <div>
+          <label>Coverage</label>
+          <span className="coverage-skeleton wide" />
+          <span className="coverage-skeleton line" />
+        </div>
+        <div>
+          <label>Missing</label>
+          <span className="coverage-skeleton wide" />
+          <span className="coverage-skeleton line" />
+        </div>
+        <div>
+          <label>Status</label>
+          <span className="coverage-skeleton wide" />
+          <span className="coverage-skeleton line" />
+        </div>
+      </div>
+    )
+  }
   if (!coverage) return <div className="coverage-summary">Coverage has not loaded.</div>
   const pct = coverage.summary.coverage_pct === null ? 'Unknown' : `${coverage.summary.coverage_pct}%`
   return (
@@ -485,11 +505,13 @@ function GapScanPanel({ selected }: { selected: { domain: string; entity_key: st
 
 function MonthCalendar({
   coverage,
+  loading,
   month,
   selectedDay,
   onSelectDay,
 }: {
   coverage: CoverageResponse | null
+  loading: boolean
   month: string
   selectedDay: CoverageDay | null
   onSelectDay: (day: CoverageDay) => void
@@ -512,17 +534,31 @@ function MonthCalendar({
       </div>
       <div className="calendar-grid">
         {Array.from({ length: leadingBlanks }).map((_, index) => <div aria-hidden="true" className="calendar-blank" key={`blank-${index}`} />)}
-        {days.map((day) => (
-          <button
-            className={`calendar-day ${calendarStatusClass(day.status)} ${selectedDay?.date === day.date ? 'selected' : ''}`}
-            key={day.date}
-            onClick={() => onSelectDay(day)}
-            type="button"
-          >
-            <span>{new Date(`${day.date}T00:00:00`).getDate()}</span>
-            <small>{day.count ? `${day.count}` : ''}</small>
-          </button>
-        ))}
+        {loading ? (
+          days.map((day) => (
+            <button
+              className="calendar-day loading"
+              disabled
+              key={day.date}
+              type="button"
+            >
+              <span>{new Date(`${day.date}T00:00:00`).getDate()}</span>
+              <small />
+            </button>
+          ))
+        ) : (
+          days.map((day) => (
+            <button
+              className={`calendar-day ${calendarStatusClass(day.status)} ${selectedDay?.date === day.date ? 'selected' : ''}`}
+              key={day.date}
+              onClick={() => onSelectDay(day)}
+              type="button"
+            >
+              <span>{new Date(`${day.date}T00:00:00`).getDate()}</span>
+              <small>{day.count ? `${day.count}` : ''}</small>
+            </button>
+          ))
+        )}
       </div>
     </div>
   )

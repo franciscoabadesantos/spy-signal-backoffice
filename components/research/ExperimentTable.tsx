@@ -51,7 +51,6 @@ type Props = {
   expandedExperimentId: string | null
   events: ResearchEvent[]
   artifacts: ResearchArtifact[]
-  detailExperiment?: ResearchExperiment | null
   loadingDetail: boolean
   onToggle: (experimentId: string) => void
 }
@@ -61,7 +60,6 @@ export function ExperimentTable({
   expandedExperimentId,
   events,
   artifacts,
-  detailExperiment,
   loadingDetail,
   onToggle,
 }: Props) {
@@ -87,7 +85,6 @@ export function ExperimentTable({
           </thead>
           <tbody>
             {experiments.map((experiment) => {
-              const candidateId = readCandidateId(experiment)
               const isBatch = experiment.run_type === 'batch'
               const expanded = expandedExperimentId === experiment.experiment_id
               return (
@@ -128,11 +125,13 @@ export function ExperimentTable({
                     <td>{renderText(experiment.horizon)}</td>
                     <td><StatusBadge status={experiment.status} /></td>
                     <td onClick={(event) => event.stopPropagation()}>
-                      {candidateId ? (
-                        <Link className="text-link" href={`/evaluation?candidate=${encodeURIComponent(candidateId)}`}>
+                      {isBatch ? (
+                        <span title="Open the batch detail to inspect member candidates">—</span>
+                      ) : (
+                        <Link className="text-link" href={`/evaluation?candidate=research:${encodeURIComponent(experiment.experiment_id)}`}>
                           Evaluate →
                         </Link>
-                      ) : <span title="No candidate output found in experiment detail">—</span>}
+                      )}
                     </td>
                     <td>{formatDate(experiment.started_at ?? experiment.created_at ?? '')}</td>
                   </tr>
@@ -142,7 +141,7 @@ export function ExperimentTable({
                         <ExpandedExperimentDetail
                           artifacts={artifacts}
                           events={events}
-                          experiment={detailExperiment?.experiment_id === experiment.experiment_id ? detailExperiment : experiment}
+                          experiment={experiment}
                           loading={loadingDetail}
                         />
                       </td>
@@ -180,7 +179,7 @@ function ExpandedExperimentDetail({
   experiment: ResearchExperiment
   loading: boolean
 }) {
-  if (loading) return <p className="small">Loading events and artifacts...</p>
+  if (loading) return <p className="small">Loading run detail...</p>
   const evalMetrics = readEvalMetrics(experiment)
 
   return (
@@ -307,19 +306,6 @@ function tickerText(experiment: ResearchExperiment): string {
   return renderText(experiment.universe)
 }
 
-export function readCandidateId(experiment: ResearchExperiment): string | null {
-  const detail = experimentDetail(experiment)
-  return firstNonEmptyString([
-    detail?.candidate_id,
-    detail?.output_candidate_id,
-    detail?.registered_candidate_id,
-    detail?.candidate,
-    asRecord(detail?.output)?.candidate_id,
-    asRecord(detail?.result)?.candidate_id,
-    candidateArtifactReference(readArray(detail?.artifacts)),
-  ])
-}
-
 export function experimentAnchorId(experimentId: string): string {
   return `experiment-${encodeURIComponent(experimentId)}`
 }
@@ -335,40 +321,9 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>
 }
 
-function readArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
-}
-
 function experimentDetail(experiment: ResearchExperiment): Record<string, unknown> | null {
   const response = asRecord(experiment.detail_response)
   return asRecord(response?.experiment) ?? response ?? asRecord(experiment)
-}
-
-function firstNonEmptyString(values: unknown[]): string | null {
-  for (const value of values) {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim()
-    }
-  }
-  return null
-}
-
-function candidateArtifactReference(artifacts: unknown[]): string | null {
-  for (const artifact of artifacts) {
-    const record = asRecord(artifact)
-    if (!record) continue
-    const reference = firstNonEmptyString([
-      record.path,
-      record.artifact_path,
-      record.artifact_ref,
-      record.name,
-      record.artifact_name,
-      record.filename,
-      record.file_name,
-    ])
-    if (reference && reference.toLowerCase().includes('candidate')) return reference
-  }
-  return null
 }
 
 function readEvalMetrics(experiment: ResearchExperiment): Array<{ label: string; value: number | string }> {

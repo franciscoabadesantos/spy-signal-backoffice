@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
-import { asRecord, unwrapList, unwrapRecord } from '@/lib/payload'
+import { unwrapList, unwrapRecord } from '@/lib/payload'
 import { EvidenceGap } from '@/app/components/workspace-data'
-import { ExperimentTable, readCandidateId, type ResearchArtifact, type ResearchEvent, type ResearchExperiment } from '@/components/research/ExperimentTable'
+import { ExperimentTable, type ResearchArtifact, type ResearchEvent, type ResearchExperiment } from '@/components/research/ExperimentTable'
 import { CrossSectionalExperimentForm, type CrossSectionalSubmissionResult } from '@/components/research/CrossSectionalExperimentForm'
 
 type Pagination = {
@@ -18,7 +18,6 @@ type Pagination = {
 export default function ResearchConsole({ adminEmail }: { adminEmail: string }) {
   const [experiments, setExperiments] = useState<ResearchExperiment[]>([])
   const [expandedExperimentId, setExpandedExperimentId] = useState<string | null>(null)
-  const [detailExperiment, setDetailExperiment] = useState<ResearchExperiment | null>(null)
   const [events, setEvents] = useState<ResearchEvent[]>([])
   const [artifacts, setArtifacts] = useState<ResearchArtifact[]>([])
   const [loadingExperiments, setLoadingExperiments] = useState(false)
@@ -27,7 +26,6 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   const [error, setError] = useState<string | null>(null)
   const [pagination, setPagination] = useState<Pagination | null>(null)
   const [offset, setOffset] = useState(0)
-  const loggedCompletedDetailRef = useRef(false)
 
   const sortedExperiments = useMemo(
     () => [...experiments]
@@ -45,7 +43,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
         requestClientJson(`/api/research/experiments?${query.toString()}`),
         requestClientJson('/api/research/batches?limit=100'),
       ])
-      const experimentList = await hydrateCompletedCandidateDetails(normalizeExperiments(experimentPayload), loggedCompletedDetailRef)
+      const experimentList = normalizeExperiments(experimentPayload)
       const batchList = normalizeBatchesAsRuns(batchPayload)
       const list = [...experimentList, ...batchList]
       setExperiments(list)
@@ -78,26 +76,19 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
   }
 
   async function loadExperimentDetail(experimentId: string) {
-    const [eventsResult, artifactsResult, detailResult] = await Promise.allSettled([
+    const [eventsResult, artifactsResult] = await Promise.allSettled([
       requestClientJson(`/api/research/experiments/${encodeURIComponent(experimentId)}/events`),
       requestClientJson(`/api/research/experiments/${encodeURIComponent(experimentId)}/artifacts`),
-      requestClientJson(`/api/research/experiments/${encodeURIComponent(experimentId)}`),
     ])
     setEvents(eventsResult.status === 'fulfilled' ? normalizeEvents(eventsResult.value) : [])
     setArtifacts(artifactsResult.status === 'fulfilled' ? normalizeArtifacts(artifactsResult.value) : [])
-    if (detailResult.status === 'fulfilled') {
-      setDetailExperiment(normalizeExperimentDetail(detailResult.value, { experiment_id: experimentId }))
-    } else {
-      setDetailExperiment(null)
-    }
-    if (eventsResult.status === 'rejected' || artifactsResult.status === 'rejected' || detailResult.status === 'rejected') {
+    if (eventsResult.status === 'rejected' || artifactsResult.status === 'rejected') {
       setError('Experiment expanded, but one or more detail endpoints failed.')
     }
   }
 
   function closeExpandedRow() {
     setExpandedExperimentId(null)
-    setDetailExperiment(null)
     setEvents([])
     setArtifacts([])
   }
@@ -156,7 +147,7 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
         </div>
       </div>
 
-      {!loadingExperiments && experiments.some((run) => run.run_type === 'batch') === false ? (
+      {!loadingExperiments && runTypeFilter === 'batch' && sortedExperiments.length === 0 ? (
         <EvidenceGap
           reason="Batch Results is currently empty because the backend batch store returns total:0."
           expected="Persisted batch rows from /analyst/research/batches; this is a backend persistence/wiring dependency, not a frontend failure."
@@ -166,7 +157,6 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
 
       <ExperimentTable
         artifacts={artifacts}
-        detailExperiment={detailExperiment}
         events={events}
         expandedExperimentId={expandedExperimentId}
         experiments={sortedExperiments}
@@ -181,40 +171,6 @@ export default function ResearchConsole({ adminEmail }: { adminEmail: string }) 
       </div>
     </div>
   )
-}
-
-async function hydrateCompletedCandidateDetails(
-  experiments: ResearchExperiment[],
-  loggedCompletedDetailRef: { current: boolean }
-): Promise<ResearchExperiment[]> {
-  const completed = experiments.filter((experiment) => isCompleted(experiment.status))
-  const needsDetail = completed.filter((experiment) => !readCandidateId(experiment))
-  const logOnlyExperiment = !loggedCompletedDetailRef.current && completed[0] && !needsDetail.includes(completed[0])
-    ? [completed[0]]
-    : []
-  const detailTargets = [...needsDetail, ...logOnlyExperiment]
-  if (detailTargets.length === 0) return experiments
-
-  const detailResults = await Promise.allSettled(
-    detailTargets.map(async (experiment) => {
-      const payload = await requestClientJson(`/api/research/experiments/${encodeURIComponent(experiment.experiment_id)}`)
-      if (!loggedCompletedDetailRef.current) {
-        console.info('[research] completed experiment detail response', payload)
-        loggedCompletedDetailRef.current = true
-      }
-      return normalizeExperimentDetail(payload, experiment)
-    })
-  )
-  const detailById = new Map<string, ResearchExperiment>()
-  for (const result of detailResults) {
-    if (result.status === 'fulfilled' && result.value) {
-      detailById.set(result.value.experiment_id, result.value)
-    }
-  }
-  return experiments.map((experiment) => {
-    const detail = detailById.get(experiment.experiment_id)
-    return detail ? { ...experiment, ...detail } : experiment
-  })
 }
 
 function normalizeExperiments(payload: unknown): ResearchExperiment[] {
@@ -241,18 +197,6 @@ function normalizeBatchesAsRuns(payload: unknown): ResearchExperiment[] {
   })
 }
 
-function normalizeExperimentDetail(payload: unknown, fallback: ResearchExperiment): ResearchExperiment | null {
-  const record = asRecord(payload)
-  const nested = unwrapRecord(payload, ['experiment'])
-  if (typeof nested?.experiment_id === 'string') {
-    return { ...nested, experiment_id: nested.experiment_id, detail_response: payload }
-  }
-  if (typeof record?.experiment_id === 'string') {
-    return { ...record, experiment_id: record.experiment_id, detail_response: payload }
-  }
-  return { ...fallback, detail_response: payload }
-}
-
 function normalizeEvents(payload: unknown): ResearchEvent[] {
   return unwrapList<ResearchEvent>(payload, ['events', 'items', 'results'])
 }
@@ -271,10 +215,6 @@ function toTimestamp(value?: string | null): number {
   if (!value) return 0
   const parsed = new Date(value).getTime()
   return Number.isNaN(parsed) ? 0 : parsed
-}
-
-function isCompleted(status?: string | null): boolean {
-  return ['done', 'completed', 'succeeded', 'success'].includes(String(status ?? '').trim().toLowerCase())
 }
 
 function initialRunTypeFilter(): 'all' | 'experiment' | 'batch' {

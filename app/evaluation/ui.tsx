@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { readApiError } from '@/lib/api-error'
 import { requestClientJson } from '@/lib/client-json'
-import { formatDate } from '@/lib/format'
 import { ApiErrorBox, EvidenceGap, JsonBlock, asRecord, readArrayPayload } from '@/app/components/workspace-data'
 import { CopyableId } from '@/components/ui/CopyableId'
 
@@ -95,12 +94,6 @@ type ComparisonRow = {
   raw: unknown
 }
 
-type MonitorState = {
-  history: unknown[]
-  lastFlips: Record<string, unknown>
-  flips: unknown[]
-}
-
 type ChartPoint = {
   value: number
   xLabel: string
@@ -145,7 +138,6 @@ function initialCandidateParam(): string | null {
 export default function EvaluationWorkspace({ adminEmail }: { adminEmail: string }) {
   const [search, setSearch] = useState('')
   const [evaluationList, setEvaluationList] = useState<SignalEvaluationListResponse>({ candidates: [], sources: {}, gaps: [] })
-  const [monitor, setMonitor] = useState<MonitorState>({ history: [], lastFlips: {}, flips: [] })
   const [selectedReport, setSelectedReport] = useState<SignalEvaluationReport | null>(null)
   const [selectedRowId, setSelectedRowId] = useState<string | null>(() => initialCandidateParam())
   const [activeChartSeries, setActiveChartSeries] = useState<PrimaryChartSeries>('equity_curve')
@@ -155,7 +147,6 @@ export default function EvaluationWorkspace({ adminEmail }: { adminEmail: string
   const [reportLoading, setReportLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reportError, setReportError] = useState<string | null>(null)
-  const [monitorError, setMonitorError] = useState<string | null>(null)
 
   const comparisonRows = useMemo(
     () => (evaluationList.candidates ?? []).map(candidateToRow),
@@ -196,27 +187,6 @@ export default function EvaluationWorkspace({ adminEmail }: { adminEmail: string
     }
   }
 
-  async function loadMonitor() {
-    setMonitorError(null)
-    const today = new Date().toISOString().slice(0, 10)
-    const [historyResult, lastFlipsResult, flipsResult] = await Promise.allSettled([
-      requestClientJson('/api/signals/history/SPY?limit=200'),
-      requestClientJson('/api/signals/last-flips?tickers=SPY'),
-      requestClientJson(`/api/signals/flips?date=${encodeURIComponent(today)}&tickers=SPY`),
-    ])
-
-    const failures = [historyResult, lastFlipsResult, flipsResult].filter((result) => result.status === 'rejected')
-    if (failures.length > 0) {
-      setMonitorError('One or more signal monitor endpoints failed.')
-    }
-
-    setMonitor({
-      history: historyResult.status === 'fulfilled' && Array.isArray(historyResult.value) ? historyResult.value : [],
-      lastFlips: lastFlipsResult.status === 'fulfilled' ? asRecord(lastFlipsResult.value) ?? {} : {},
-      flips: flipsResult.status === 'fulfilled' && Array.isArray(flipsResult.value) ? flipsResult.value : [],
-    })
-  }
-
   async function loadReport(candidateId: string) {
     setReportLoading(true)
     setReportError(null)
@@ -234,7 +204,14 @@ export default function EvaluationWorkspace({ adminEmail }: { adminEmail: string
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadEvaluation()
-      void loadMonitor()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const candidateParam = initialCandidateParam()
+      if (candidateParam) setSelectedRowId(candidateParam)
     }, 0)
     return () => window.clearTimeout(timer)
   }, [])
@@ -298,7 +275,6 @@ export default function EvaluationWorkspace({ adminEmail }: { adminEmail: string
       </section>
 
       <CompareWorkspace rows={compareRows} />
-      <SignalMonitor monitor={monitor} error={monitorError} selectedTicker={selectedRow?.ticker || 'SPY'} />
     </div>
   )
 }
@@ -341,7 +317,13 @@ function CandidateList({
       <div className="evaluation-list-header">
         <div className="evaluation-list-title">
           <h2>Candidates</h2>
-          <span className="small">{loading ? 'Loading' : rows.length}</span>
+          <span className="small">{loading ? 'Loading' : `${rows.length} rows`}</span>
+        </div>
+        <div className="compare-count-row">
+          <span className="badge queued">{compareIds.length} selected for compare</span>
+          {compareIds.length > 0 ? (
+            <button className="text-link" onClick={() => setCompareIds([])} type="button">Clear</button>
+          ) : null}
         </div>
         <input
           aria-label="Filter candidates by ticker or ID"
@@ -378,16 +360,15 @@ function CandidateList({
               <strong className="candidate-ticker">{row.ticker}</strong>
               <span className="candidate-main">
                 <span className="candidate-controls">
-                  <input
-                    aria-label={`Compare ${row.displayId}`}
-                    checked={compareIds.includes(row.id)}
-                    onChange={(event) => {
-                      event.stopPropagation()
-                      toggleCompare(row.id)
-                    }}
-                    onClick={(event) => event.stopPropagation()}
-                    type="checkbox"
-                  />
+                  <label className="compare-check" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      aria-label={`Compare ${row.displayId}`}
+                      checked={compareIds.includes(row.id)}
+                      onChange={() => toggleCompare(row.id)}
+                      type="checkbox"
+                    />
+                    <span>Compare</span>
+                  </label>
                   <button className="candidate-select-button" onClick={() => onSelect(row.id)} title={row.id} type="button">
                     {row.displayId}
                   </button>
@@ -429,22 +410,86 @@ function ChartWorkspace({
     <main className="workspace-column workspace-pane">
       <div className="chart-selector-row">
         <div>
-          <label htmlFor="evaluationSeries">Evidence series</label>
-          <select
-            id="evaluationSeries"
-            value={activeSeries}
-            onChange={(event) => setActiveSeries(event.target.value as PrimaryChartSeries)}
-          >
-            {PRIMARY_CHART_SERIES.map((series) => (
-              <option key={series} value={series}>{labelFromKey(series)}</option>
-            ))}
-          </select>
+          <h2>Evidence series</h2>
+          <p className="small">Scan every backend series, then open one in the full chart.</p>
         </div>
         <span className="small">{selectedRow ? selectedRow.displayId : 'Select a candidate'}</span>
       </div>
+      <EvidenceSeriesGrid
+        activeSeries={activeSeries}
+        report={report}
+        selectedRow={selectedRow}
+        setActiveSeries={setActiveSeries}
+      />
       <ChartPanel seriesKey={activeSeries} report={report} selectedRow={selectedRow} />
       {selectedRow ? <MetricsRow report={report} selectedRow={selectedRow} /> : null}
     </main>
+  )
+}
+
+function EvidenceSeriesGrid({
+  activeSeries,
+  report,
+  selectedRow,
+  setActiveSeries,
+}: {
+  activeSeries: PrimaryChartSeries
+  report: SignalEvaluationReport | null
+  selectedRow: ComparisonRow | null
+  setActiveSeries: (series: PrimaryChartSeries) => void
+}) {
+  if (!selectedRow) return null
+
+  return (
+    <div className="series-grid" aria-label="Evidence series previews">
+      {PRIMARY_CHART_SERIES.map((seriesKey) => {
+        const series = report?.series?.[seriesKey]
+        const chartPoints = pointsToChartPoints(Array.isArray(series?.points) ? series.points : [], series?.x_field, series?.y_field)
+        const gap = gapForSeries(report, seriesKey)
+        const active = seriesKey === activeSeries
+        return (
+          <button
+            aria-pressed={active}
+            className={active ? 'series-tile active' : 'series-tile'}
+            key={seriesKey}
+            onClick={() => setActiveSeries(seriesKey)}
+            type="button"
+          >
+            <span className="series-tile-title">{labelFromKey(seriesKey)}</span>
+            {chartPoints.length > 0 ? (
+              <SparklinePreview points={chartPoints} />
+            ) : (
+              <span className="series-gap-card">
+                <span>EvidenceGap</span>
+                <small>{gap?.message ?? 'No series points returned.'}</small>
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function SparklinePreview({ points }: { points: ChartPoint[] }) {
+  const width = 160
+  const height = 54
+  const margin = 4
+  const values = points.map((point) => point.value)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const span = max - min || 1
+  const plotWidth = width - margin * 2
+  const plotHeight = height - margin * 2
+  const polyline = points.map((point, index) => {
+    const x = margin + (points.length === 1 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth)
+    const y = margin + plotHeight - ((point.value - min) / span) * plotHeight
+    return `${x},${y}`
+  }).join(' ')
+  return (
+    <svg aria-hidden="true" className="series-sparkline" viewBox={`0 0 ${width} ${height}`}>
+      <polyline fill="none" points={polyline} stroke="#2563eb" strokeWidth="3" />
+    </svg>
   )
 }
 
@@ -510,12 +555,7 @@ function MiniSeriesChart({ points }: { points: ChartPoint[] }) {
     const y = margin.top + plotHeight - ((point.value - min) / span) * plotHeight
     return `${x},${y}`
   }).join(' ')
-  const middleIndex = Math.floor((points.length - 1) / 2)
-  const xLabels = [
-    { x: margin.left, label: points[0]?.xLabel ?? '' },
-    { x: margin.left + plotWidth / 2, label: points[middleIndex]?.xLabel ?? '' },
-    { x: margin.left + plotWidth, label: points[points.length - 1]?.xLabel ?? '' },
-  ]
+  const xLabels = buildChartTicks(points, plotWidth, margin.left)
 
   return (
     <svg aria-label="Signal evidence chart" className="mini-series-chart" role="img" viewBox={`0 0 ${width} ${height}`}>
@@ -524,7 +564,7 @@ function MiniSeriesChart({ points }: { points: ChartPoint[] }) {
       <text x={margin.left - 10} y={margin.top + 4} textAnchor="end" fill="#64748b" fontSize="11">{formatAxisValue(max)}</text>
       <text x={margin.left - 10} y={margin.top + plotHeight} textAnchor="end" fill="#64748b" fontSize="11">{formatAxisValue(min)}</text>
       {xLabels.map((item, index) => (
-        <text key={`${item.label}-${index}`} x={item.x} y={height - 14} textAnchor={index === 0 ? 'start' : index === 1 ? 'middle' : 'end'} fill="#64748b" fontSize="11">
+        <text key={`${item.label}-${index}`} x={item.x} y={height - 14} textAnchor={item.anchor} fill="#64748b" fontSize="10">
           {item.label}
         </text>
       ))}
@@ -533,10 +573,28 @@ function MiniSeriesChart({ points }: { points: ChartPoint[] }) {
   )
 }
 
+function buildChartTicks(points: ChartPoint[], plotWidth: number, left: number): Array<{ x: number; label: string; anchor: 'start' | 'middle' | 'end' }> {
+  if (points.length === 0) return []
+  const tickCount = Math.min(6, points.length)
+  const indexes = new Set<number>()
+  for (let index = 0; index < tickCount; index += 1) {
+    indexes.add(Math.round((index / Math.max(1, tickCount - 1)) * (points.length - 1)))
+  }
+  return [...indexes].sort((a, b) => a - b).map((pointIndex, tickIndex, all) => {
+    const x = left + (points.length === 1 ? plotWidth / 2 : (pointIndex / (points.length - 1)) * plotWidth)
+    return {
+      x,
+      label: points[pointIndex]?.xLabel ?? '',
+      anchor: tickIndex === 0 ? 'start' : tickIndex === all.length - 1 ? 'end' : 'middle',
+    }
+  })
+}
+
 function MetricsRow({ report, selectedRow }: { report: SignalEvaluationReport | null; selectedRow: ComparisonRow | null }) {
   const metrics = report?.metrics ?? selectedRow?.candidate.metrics ?? {}
   const items = [
     ['Sharpe', metricText(metrics, ['sharpe'])],
+    ['Rank IC', metricText(metrics, ['rank_ic', 'ic', 'ic_mean', 'mean_ic', 'ic_latest'])],
     ['Max DD', metricText(metrics, ['max_drawdown', 'drawdown'])],
     ['Ann. return', metricText(metrics, ['annual_return', 'ann_return', 'cagr'])],
     ['Turnover', metricText(metrics, ['turnover'])],
@@ -644,64 +702,6 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
       <label>{label}</label>
       <div>{value}</div>
     </div>
-  )
-}
-
-function SignalMonitor({ monitor, error, selectedTicker }: { monitor: MonitorState; error: string | null; selectedTicker: string }) {
-  const historyRows = monitor.history.map((row) => {
-    const record = asRecord(row) ?? {}
-    return {
-      date: formatDate(readText(record, ['signal_date', 'signalDate', 'date', 'as_of_date'])),
-      direction: readText(record, ['direction', 'signal', 'stance']),
-      score: readText(record, ['signal_strength', 'score', 'conviction', 'prob_side']),
-    }
-  })
-  const lastFlipRows = Object.entries(monitor.lastFlips).map(([ticker, lastFlipDate]) => ({
-    ticker,
-    date: formatDate(String(lastFlipDate ?? '')),
-  }))
-  const flipRows = monitor.flips.map((row) => {
-    const record = asRecord(row) ?? {}
-    return {
-      ticker: readText(record, ['ticker', 'symbol']),
-      from: readText(record, ['fromDirection', 'from_direction']),
-      to: readText(record, ['toDirection', 'to_direction']),
-      date: formatDate(readText(record, ['signalDate', 'signal_date', 'date'])),
-      conviction: readText(record, ['conviction', 'score']),
-    }
-  })
-
-  return (
-    <section className="card monitor-section">
-      <div className="split-row">
-        <div>
-          <h2>Signal monitor</h2>
-          <p className="small">Current endpoint-backed signal behavior.</p>
-        </div>
-        <span className="small">{selectedTicker}</span>
-      </div>
-      <ApiErrorBox error={error} />
-      <div className="feature-grid">
-        <SimpleTable title={`Signal history: ${selectedTicker}`} rows={historyRows} columns={[
-          ['date', 'Date'],
-          ['direction', 'Direction'],
-          ['score', 'Score / strength'],
-        ]} emptyLabel="No signal history returned." />
-        <SimpleTable title="Last flips" rows={lastFlipRows} columns={[
-          ['ticker', 'Ticker'],
-          ['date', 'Last flip date'],
-        ]} emptyLabel="No last flips returned." />
-        {flipRows.length > 0 ? (
-          <SimpleTable title="Flip events by date" rows={flipRows} columns={[
-            ['ticker', 'Ticker'],
-            ['from', 'From'],
-            ['to', 'To'],
-            ['date', 'Date'],
-            ['conviction', 'Conviction'],
-          ]} />
-        ) : null}
-      </div>
-    </section>
   )
 }
 
@@ -885,47 +885,6 @@ function PromoteToEnvironment({ adminEmail, candidate }: { adminEmail: string; c
   )
 }
 
-function SimpleTable({
-  title,
-  rows,
-  columns,
-  emptyLabel = 'No rows returned.',
-}: {
-  title: string
-  rows: Array<Record<string, string>>
-  columns: Array<[string, string]>
-  emptyLabel?: string
-}) {
-  return (
-    <div className="card compact-card">
-      <h3>{title}</h3>
-      <div className="table-wrap">
-        <table className="registry-table">
-          <thead>
-            <tr>
-              {columns.map(([, label]) => <th key={label}>{label}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={index}>
-                {columns.map(([key]) => <td key={key}>{row[key] || '—'}</td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {rows.length === 0 ? (
-        <EvidenceGap
-          reason={emptyLabel}
-          expected="Endpoint rows from the existing signal monitor contract."
-          title="Monitor evidence unavailable"
-        />
-      ) : null}
-    </div>
-  )
-}
-
 function EvidenceDot({ present, label }: { present: boolean; label: string }) {
   return (
     <span
@@ -982,7 +941,7 @@ function evidenceFromCandidate(candidate: SignalEvaluationCandidateSummary): Rec
     equity: hasAny(metrics, ['equity', 'equity_curve', 'equity_points', 'cumulative_return']),
     drawdown: hasAny(metrics, ['drawdown', 'max_drawdown']),
     turnover: hasAny(metrics, ['turnover']),
-    ic: hasAny(metrics, ['ic', 'ic_mean', 'mean_ic', 'ic_latest']),
+    ic: hasAny(metrics, ['rank_ic', 'rank_ic_ir', 'ic', 'ic_mean', 'mean_ic', 'ic_latest']),
     forward: hasAny(metrics, ['forward_return', 'mean_forward_return', 'forward_returns']),
   }
 }
@@ -995,7 +954,7 @@ function evidenceFromReport(report: SignalEvaluationReport | null, candidate: Si
     equity: hasSeries(series.equity_curve) || fallback.equity,
     drawdown: hasSeries(series.drawdown) || fallback.drawdown,
     turnover: hasSeries(series.turnover) || fallback.turnover,
-    ic: hasSeries(series.ic_evolution) || hasSeries(series.rolling_ic) || hasSeries(series.cumulative_ic) || hasAny(metrics, ['ic', 'ic_mean', 'mean_ic', 'ic_latest']),
+    ic: hasSeries(series.ic_evolution) || hasSeries(series.rolling_ic) || hasSeries(series.cumulative_ic) || hasAny(metrics, ['rank_ic', 'rank_ic_ir', 'ic', 'ic_mean', 'mean_ic', 'ic_latest']),
     forward: hasSeries(series.forward_returns) || hasAny(metrics, ['forward_return', 'mean_forward_return', 'forward_returns']),
   }
 }
@@ -1042,21 +1001,30 @@ function pointsToChartPoints(points: Array<Record<string, unknown>>, xField = 'd
     const xValue = point[xField] ?? point.date ?? point.signal_date ?? point.as_of_date ?? point.timestamp ?? String(index + 1)
     return {
       value,
-      xLabel: typeof xValue === 'string' ? formatDate(xValue) : String(xValue),
+      xLabel: formatChartDate(xValue),
     }
   }).filter((point): point is ChartPoint => Boolean(point))
 }
 
 function primaryTicker(candidate: SignalEvaluationCandidateSummary): string {
   const symbols = Array.isArray(candidate.symbols) ? candidate.symbols.filter(Boolean) : []
-  if (symbols[0]) return symbols[0]
+  if (symbols.length === 1) return symbols[0]
+  if (symbols.length > 1) return multiSymbolLabel(candidate, symbols.length)
   if (candidate.universe) return candidate.universe
   return '—'
 }
 
 function scopeText(candidate: SignalEvaluationCandidateSummary): string {
-  const symbols = Array.isArray(candidate.symbols) ? candidate.symbols.join(', ') : ''
-  return symbols || candidate.universe || '—'
+  const symbols = Array.isArray(candidate.symbols) ? candidate.symbols.filter(Boolean) : []
+  if (symbols.length === 1) return symbols[0]
+  if (symbols.length > 1) return `${candidate.universe ?? candidate.strategy_family ?? 'Universe'} (${symbols.length} tickers)`
+  return candidate.universe || '—'
+}
+
+function multiSymbolLabel(candidate: SignalEvaluationCandidateSummary, count: number): string {
+  const strategy = candidate.strategy_family?.trim() || 'Strategy'
+  const universe = candidate.universe?.trim() || 'Universe'
+  return `${strategy} / ${universe} / ${count} tickers`
 }
 
 function sourceFromType(sourceType: SignalEvaluationCandidateSummary['source_type']): SourceFilter {
@@ -1072,16 +1040,6 @@ function sourceBadgeClass(source: SourceFilter): string {
   if (source === 'paper') return 'cancelled'
   if (source === 'research') return 'running'
   return 'backend-gap'
-}
-
-function readText(record: Record<string, unknown>, keys: string[]): string {
-  for (const key of keys) {
-    const value = record[key]
-    if (value === null || value === undefined || value === '') continue
-    if (Array.isArray(value)) return value.join(', ')
-    return String(value)
-  }
-  return '—'
 }
 
 function readNumber(value: unknown): number | undefined {
@@ -1131,4 +1089,14 @@ function formatAxisValue(value: number): string {
   if (Math.abs(value) >= 100) return value.toFixed(0)
   if (Math.abs(value) >= 10) return value.toFixed(1)
   return value.toFixed(2)
+}
+
+function formatChartDate(value: unknown): string {
+  if (typeof value === 'number') return String(value)
+  if (typeof value !== 'string') return String(value ?? '')
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  const parsed = new Date(trimmed)
+  if (Number.isNaN(parsed.getTime())) return trimmed
+  return parsed.toISOString().slice(0, 10)
 }
