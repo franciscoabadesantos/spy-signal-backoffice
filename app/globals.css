@@ -506,6 +506,115 @@ button:disabled {
   margin-top: 0;
 }
 
+.relationship-map-tabs {
+  display: inline-flex;
+  gap: 6px;
+  width: auto;
+  max-width: 100%;
+  margin-bottom: 16px;
+  padding: 4px;
+  border: 1px solid #dbe3f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.relationship-map-tabs button {
+  width: auto;
+  min-width: 120px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #475569;
+  font-weight: 700;
+}
+
+.relationship-map-tabs button.active {
+  background: #0f172a;
+  color: #fff;
+}
+
+.relationship-map-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 12px;
+  margin: 14px 0 16px;
+}
+
+.relationship-map-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.relationship-map-metric-card {
+  padding: 14px;
+}
+
+.relationship-map-coverage-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.42fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.relationship-map-heatmap,
+.relationship-map-country-table {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.relationship-map-region-list {
+  display: grid;
+  gap: 10px;
+}
+
+.relationship-map-region-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dbe3f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.relationship-map-region-card.green {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+}
+
+.relationship-map-region-card.yellow {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.relationship-map-region-card.red {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.relationship-map-region-card.gray {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.relationship-map-region-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.1);
+}
+
+.relationship-map-region-bar span {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: 999px;
+  background: #0f172a;
+}
+
 .badge {
   display: inline-block;
   padding: 3px 8px;
@@ -2335,6 +2444,9 @@ details summary {
   .metric-grid,
   .data-workspace-grid,
   .data-filter-bar,
+  .relationship-map-filter-bar,
+  .relationship-map-summary-grid,
+  .relationship-map-coverage-grid,
   .month-toolbar,
   .coverage-summary,
   .data-range-form,

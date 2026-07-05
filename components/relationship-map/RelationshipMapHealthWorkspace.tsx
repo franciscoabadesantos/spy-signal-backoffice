@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { requestClientJson } from '@/lib/client-json'
 import { asRecord, firstList, type RowRecord } from '@/lib/payload'
+import { RelationshipMapCoveragePanel } from '@/components/relationship-map/RelationshipMapCoveragePanel'
 
 type Props = {
   adminEmail: string
@@ -38,6 +40,9 @@ type Rollup = {
 }
 
 export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const activeTab = searchParams.get('tab') === 'coverage' ? 'coverage' : 'source-health'
   const [payload, setPayload] = useState<unknown>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown>(null)
@@ -72,6 +77,17 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
   const sortedThemes = useMemo(() => [...themes].sort(compareThemeRows), [themes])
   const unavailable = Boolean(error && !loading)
 
+  function selectTab(tab: 'source-health' | 'coverage') {
+    const params = new URLSearchParams(searchParams.toString())
+    if (tab === 'coverage') {
+      params.set('tab', 'coverage')
+    } else {
+      params.delete('tab')
+    }
+    const query = params.toString()
+    router.replace(query ? `/relationship-map?${query}` : '/relationship-map', { scroll: false })
+  }
+
   return (
     <div className="page-stack">
       <div className="card">
@@ -79,103 +95,130 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
           <div>
             <p className="eyebrow">Correlation system</p>
             <h1>Relationship map</h1>
-            <p className="small">Source and daily build health for theme-driven relationship edges.</p>
+            <p className="small">Source health and current onboarded-universe coverage for relationship edges.</p>
           </div>
           <div className="small">Admin: {adminEmail}</div>
         </div>
       </div>
 
-      {error ? <SourceHealthError error={error} /> : null}
-
-      <div className="metric-grid">
-        <KpiCard
-          label="Pipeline status"
-          value={loading ? '...' : statusLabel(rollup.status)}
-          sub={loading ? 'Checking relationship-map source health' : `last build: ${rollup.lastBuildLabel}, ran today ${ranTodayLabel(rollup.buildRanToday)}`}
-          status={rollup.status}
-        />
-        <KpiCard
-          label="Active themes"
-          value={loading ? '...' : unavailable ? '-' : `${rollup.activeThemes}/${rollup.totalThemes}`}
-          sub={unavailable ? 'Endpoint unavailable' : 'Themes enabled for map publication'}
-        />
-        <KpiCard
-          label="Red flags"
-          value={loading ? '...' : unavailable ? '-' : String(rollup.noEdges + rollup.empty)}
-          sub={unavailable ? 'Endpoint unavailable' : `${rollup.noEdges} no-edges, ${rollup.empty} empty`}
-          status={unavailable ? 'gray' : rollup.noEdges + rollup.empty > 0 ? 'red' : 'green'}
-        />
+      <div className="relationship-map-tabs" role="tablist" aria-label="Relationship map workspace sections">
+        <button
+          aria-selected={activeTab === 'source-health'}
+          className={activeTab === 'source-health' ? 'active' : ''}
+          onClick={() => selectTab('source-health')}
+          role="tab"
+          type="button"
+        >
+          Source health
+        </button>
+        <button
+          aria-selected={activeTab === 'coverage'}
+          className={activeTab === 'coverage' ? 'active' : ''}
+          onClick={() => selectTab('coverage')}
+          role="tab"
+          type="button"
+        >
+          Coverage
+        </button>
       </div>
 
-      <section className="card">
-        <div className="split-row">
-          <div>
-            <h2>Source health</h2>
-            <p className="small">
-              Problems are sorted first. No edges means an active theme has holdings but did not publish relationship edges in the latest build.
-            </p>
+      {activeTab === 'coverage' ? <RelationshipMapCoveragePanel /> : null}
+
+      {activeTab !== 'source-health' ? null : (
+        <>
+          {error ? <SourceHealthError error={error} /> : null}
+
+          <div className="metric-grid">
+            <KpiCard
+              label="Pipeline status"
+              value={loading ? '...' : statusLabel(rollup.status)}
+              sub={loading ? 'Checking relationship-map source health' : `last build: ${rollup.lastBuildLabel}, ran today ${ranTodayLabel(rollup.buildRanToday)}`}
+              status={rollup.status}
+            />
+            <KpiCard
+              label="Active themes"
+              value={loading ? '...' : unavailable ? '-' : `${rollup.activeThemes}/${rollup.totalThemes}`}
+              sub={unavailable ? 'Endpoint unavailable' : 'Themes enabled for map publication'}
+            />
+            <KpiCard
+              label="Red flags"
+              value={loading ? '...' : unavailable ? '-' : String(rollup.noEdges + rollup.empty)}
+              sub={unavailable ? 'Endpoint unavailable' : `${rollup.noEdges} no-edges, ${rollup.empty} empty`}
+              status={unavailable ? 'gray' : rollup.noEdges + rollup.empty > 0 ? 'red' : 'green'}
+            />
           </div>
-          <span className={`badge ${statusBadgeClass(rollup.status)}`}>{statusLabel(rollup.status)}</span>
-        </div>
 
-        <div className="status-chip-row">
-          <span className="badge failed">no edges: {countLabel(rollup.noEdges, unavailable)}</span>
-          <span className="badge failed">empty: {countLabel(rollup.empty, unavailable)}</span>
-          <span className="badge running">stale: {countLabel(rollup.stale, unavailable)}</span>
-          <span className="badge backend-gap">shallow: {countLabel(rollup.shallow, unavailable)}</span>
-          <span className="badge backend-gap">weight hygiene adjusted: {countLabel(rollup.weightHygieneAdjusted, unavailable)}</span>
-        </div>
+          <section className="card">
+            <div className="split-row">
+              <div>
+                <h2>Source health</h2>
+                <p className="small">
+                  Problems are sorted first. No edges means an active theme has holdings but did not publish relationship edges in the latest build.
+                </p>
+              </div>
+              <span className={`badge ${statusBadgeClass(rollup.status)}`}>{statusLabel(rollup.status)}</span>
+            </div>
 
-        <div className="small relationship-map-build-line">
-          Edge build sanity: {rollup.edgeSummary}
-        </div>
+            <div className="status-chip-row">
+              <span className="badge failed">no edges: {countLabel(rollup.noEdges, unavailable)}</span>
+              <span className="badge failed">empty: {countLabel(rollup.empty, unavailable)}</span>
+              <span className="badge running">stale: {countLabel(rollup.stale, unavailable)}</span>
+              <span className="badge backend-gap">shallow: {countLabel(rollup.shallow, unavailable)}</span>
+              <span className="badge backend-gap">weight hygiene adjusted: {countLabel(rollup.weightHygieneAdjusted, unavailable)}</span>
+            </div>
 
-        <div className="table-wrap relationship-map-table">
-          <table className="registry-table">
-            <thead>
-              <tr>
-                <th>Theme</th>
-                <th>ETF</th>
-                <th>Source</th>
-                <th>Holdings</th>
-                <th>As of</th>
-                <th>Age</th>
-                <th>Flags</th>
-                <th>What it means</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td className="small" colSpan={8}>Loading relationship-map source health...</td>
-                </tr>
-              ) : null}
-              {!loading && sortedThemes.length === 0 ? (
-                <tr>
-                  <td className="small" colSpan={8}>
-                    {error ? 'Relationship-map source health is unavailable.' : 'No relationship-map source health rows were returned.'}
-                  </td>
-                </tr>
-              ) : null}
-              {!loading ? sortedThemes.map((theme, index) => (
-                <tr className={theme.noEdges || theme.empty ? 'danger-row' : undefined} key={rowKey(theme, index)}>
-                  <td>
-                    <strong>{theme.theme}</strong>
-                    {!theme.active ? <div className="small">inactive</div> : null}
-                  </td>
-                  <td>{theme.etf}</td>
-                  <td>{theme.source}</td>
-                  <td>{theme.holdingsCount === null ? '—' : theme.holdingsCount}</td>
-                  <td>{theme.holdingsAsOf ?? '—'}</td>
-                  <td>{theme.ageDays === null ? '—' : `${theme.ageDays}d`}</td>
-                  <td><FlagBadges theme={theme} /></td>
-                  <td>{plainLanguage(theme)}</td>
-                </tr>
-              )) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
+            <div className="small relationship-map-build-line">
+              Edge build sanity: {rollup.edgeSummary}
+            </div>
+
+            <div className="table-wrap relationship-map-table">
+              <table className="registry-table">
+                <thead>
+                  <tr>
+                    <th>Theme</th>
+                    <th>ETF</th>
+                    <th>Source</th>
+                    <th>Holdings</th>
+                    <th>As of</th>
+                    <th>Age</th>
+                    <th>Flags</th>
+                    <th>What it means</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td className="small" colSpan={8}>Loading relationship-map source health...</td>
+                    </tr>
+                  ) : null}
+                  {!loading && sortedThemes.length === 0 ? (
+                    <tr>
+                      <td className="small" colSpan={8}>
+                        {error ? 'Relationship-map source health is unavailable.' : 'No relationship-map source health rows were returned.'}
+                      </td>
+                    </tr>
+                  ) : null}
+                  {!loading ? sortedThemes.map((theme, index) => (
+                    <tr className={theme.noEdges || theme.empty ? 'danger-row' : undefined} key={rowKey(theme, index)}>
+                      <td>
+                        <strong>{theme.theme}</strong>
+                        {!theme.active ? <div className="small">inactive</div> : null}
+                      </td>
+                      <td>{theme.etf}</td>
+                      <td>{theme.source}</td>
+                      <td>{theme.holdingsCount === null ? '—' : theme.holdingsCount}</td>
+                      <td>{theme.holdingsAsOf ?? '—'}</td>
+                      <td>{theme.ageDays === null ? '—' : `${theme.ageDays}d`}</td>
+                      <td><FlagBadges theme={theme} /></td>
+                      <td>{plainLanguage(theme)}</td>
+                    </tr>
+                  )) : null}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      )}
     </div>
   )
 }
