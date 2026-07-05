@@ -70,6 +70,7 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
   const themes = useMemo(() => normalizeThemes(payload), [payload])
   const rollup = useMemo(() => buildRollup(payload, themes), [payload, themes])
   const sortedThemes = useMemo(() => [...themes].sort(compareThemeRows), [themes])
+  const unavailable = Boolean(error && !loading)
 
   return (
     <div className="page-stack">
@@ -95,14 +96,14 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
         />
         <KpiCard
           label="Active themes"
-          value={loading ? '...' : `${rollup.activeThemes}/${rollup.totalThemes}`}
-          sub="Themes enabled for map publication"
+          value={loading ? '...' : unavailable ? '-' : `${rollup.activeThemes}/${rollup.totalThemes}`}
+          sub={unavailable ? 'Endpoint unavailable' : 'Themes enabled for map publication'}
         />
         <KpiCard
           label="Red flags"
-          value={loading ? '...' : String(rollup.noEdges + rollup.empty)}
-          sub={`${rollup.noEdges} no-edges, ${rollup.empty} empty`}
-          status={rollup.noEdges + rollup.empty > 0 ? 'red' : 'green'}
+          value={loading ? '...' : unavailable ? '-' : String(rollup.noEdges + rollup.empty)}
+          sub={unavailable ? 'Endpoint unavailable' : `${rollup.noEdges} no-edges, ${rollup.empty} empty`}
+          status={unavailable ? 'gray' : rollup.noEdges + rollup.empty > 0 ? 'red' : 'green'}
         />
       </div>
 
@@ -118,11 +119,11 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
         </div>
 
         <div className="status-chip-row">
-          <span className="badge failed">no edges: {rollup.noEdges}</span>
-          <span className="badge failed">empty: {rollup.empty}</span>
-          <span className="badge running">stale: {rollup.stale}</span>
-          <span className="badge backend-gap">shallow: {rollup.shallow}</span>
-          <span className="badge backend-gap">weight hygiene adjusted: {rollup.weightHygieneAdjusted}</span>
+          <span className="badge failed">no edges: {countLabel(rollup.noEdges, unavailable)}</span>
+          <span className="badge failed">empty: {countLabel(rollup.empty, unavailable)}</span>
+          <span className="badge running">stale: {countLabel(rollup.stale, unavailable)}</span>
+          <span className="badge backend-gap">shallow: {countLabel(rollup.shallow, unavailable)}</span>
+          <span className="badge backend-gap">weight hygiene adjusted: {countLabel(rollup.weightHygieneAdjusted, unavailable)}</span>
         </div>
 
         <div className="small relationship-map-build-line">
@@ -282,8 +283,17 @@ function buildRollup(payload: unknown, themes: ThemeHealthRow[]): Rollup {
   }
 
   const rollupRecord = asRecord(record?.rollup) ?? asRecord(record?.summary) ?? null
-  const lastBuildRecord = asRecord(record?.lastBuild) ?? asRecord(record?.last_build) ?? asRecord(record?.pipeline) ?? null
-  const countsRecord = asRecord(rollupRecord?.counts) ?? asRecord(rollupRecord?.flag_counts) ?? asRecord(rollupRecord?.counts_by_flag)
+  const pipelineRecord = asRecord(record?.pipeline)
+  const lastBuildRecord = asRecord(record?.lastBuild)
+    ?? asRecord(record?.last_build)
+    ?? asRecord(pipelineRecord?.lastBuild)
+    ?? asRecord(pipelineRecord?.last_build)
+    ?? pipelineRecord
+    ?? null
+  const countsRecord = asRecord(rollupRecord?.counts)
+    ?? asRecord(rollupRecord?.flagCounts)
+    ?? asRecord(rollupRecord?.flag_counts)
+    ?? asRecord(rollupRecord?.counts_by_flag)
 
   const noEdges = readCount(rollupRecord, countsRecord, ['no_edges', 'noEdges'], themes.filter((theme) => theme.noEdges).length)
   const empty = readCount(rollupRecord, countsRecord, ['empty'], themes.filter((theme) => theme.empty).length)
@@ -296,6 +306,7 @@ function buildRollup(payload: unknown, themes: ThemeHealthRow[]): Rollup {
     themes.filter((theme) => theme.weightHygieneAdjusted).length
   )
   const buildRanToday = readBoolean(record ?? {}, ['buildRanToday', 'build_ran_today'])
+    ?? readBoolean(pipelineRecord ?? {}, ['buildRanToday', 'build_ran_today'])
     ?? readBoolean(lastBuildRecord ?? {}, ['buildRanToday', 'build_ran_today', 'ran_today'])
   const explicitStatus = normalizeStatus(readString(record, ['status']) ?? readString(rollupRecord, ['status']))
   const status = explicitStatus ?? deriveStatus({ noEdges, empty, stale, shallow, weightHygieneAdjusted, buildRanToday })
@@ -304,8 +315,8 @@ function buildRollup(payload: unknown, themes: ThemeHealthRow[]): Rollup {
     status,
     lastBuildLabel: formatLastBuild(lastBuildRecord, record),
     buildRanToday,
-    totalThemes: readCount(rollupRecord, countsRecord, ['total_themes', 'totalThemes'], themes.length),
-    activeThemes: readCount(rollupRecord, countsRecord, ['active_themes', 'activeThemes'], themes.filter((theme) => theme.active).length),
+    totalThemes: readCount(rollupRecord, countsRecord, ['themeCount', 'total_themes', 'totalThemes'], themes.length),
+    activeThemes: readCount(rollupRecord, countsRecord, ['activeThemeCount', 'active_themes', 'activeThemes'], themes.filter((theme) => theme.active).length),
     noEdges,
     empty,
     stale,
@@ -353,6 +364,10 @@ function ranTodayLabel(value: boolean | null): string {
   if (value === true) return '✔'
   if (value === false) return '✘'
   return 'unknown'
+}
+
+function countLabel(value: number, unavailable: boolean): string {
+  return unavailable ? '-' : String(value)
 }
 
 function statusBadgeClass(status: Rollup['status']): string {
@@ -414,7 +429,13 @@ function formatDateTime(value: string): string {
 }
 
 function formatEdgeSummary(payload: RowRecord | null): string {
-  const value = payload?.edgeCountsByLayerWindow ?? payload?.edge_counts_by_layer_window ?? asRecord(payload?.lastBuild)?.edgeCountsByLayerWindow ?? asRecord(payload?.last_build)?.edge_counts_by_layer_window
+  const pipeline = asRecord(payload?.pipeline)
+  const value = payload?.edgeCountsByLayerWindow
+    ?? payload?.edge_counts_by_layer_window
+    ?? pipeline?.edgeCountsByLayerWindow
+    ?? pipeline?.edge_counts_by_layer_window
+    ?? asRecord(payload?.lastBuild)?.edgeCountsByLayerWindow
+    ?? asRecord(payload?.last_build)?.edge_counts_by_layer_window
   if (!value) return 'not returned by backend'
   if (Array.isArray(value)) {
     if (value.length === 0) return '0 latest-build edge groups'
