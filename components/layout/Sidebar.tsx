@@ -87,6 +87,12 @@ export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = f
       ],
     },
     {
+      label: 'RELATIONSHIP MAP',
+      items: [
+        { label: 'Source health', href: '/relationship-map', dot: 'gray' },
+      ],
+    },
+    {
       label: 'RESEARCH',
       items: [
         { label: 'Launch & Runs', href: '/research', dot: sidebarHealth.research },

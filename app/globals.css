@@ -494,6 +494,18 @@ button:disabled {
   margin-top: 10px;
 }
 
+.relationship-map-build-line {
+  margin: 10px 0 12px;
+}
+
+.relationship-map-table {
+  margin-top: 12px;
+}
+
+.relationship-map-flags {
+  margin-top: 0;
+}
+
 .badge {
   display: inline-block;
   padding: 3px 8px;
