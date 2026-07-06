@@ -558,6 +558,13 @@ button:disabled {
   align-items: start;
 }
 
+.relationship-map-frontier-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 16px;
+  align-items: start;
+}
+
 .relationship-map-heatmap,
 .relationship-map-country-table {
   display: grid;
@@ -2447,6 +2454,7 @@ details summary {
   .relationship-map-filter-bar,
   .relationship-map-summary-grid,
   .relationship-map-coverage-grid,
+  .relationship-map-frontier-grid,
   .month-toolbar,
   .coverage-summary,
   .data-range-form,

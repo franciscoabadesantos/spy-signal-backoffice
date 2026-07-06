@@ -5,10 +5,13 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { requestClientJson } from '@/lib/client-json'
 import { asRecord, firstList, type RowRecord } from '@/lib/payload'
 import { RelationshipMapCoveragePanel } from '@/components/relationship-map/RelationshipMapCoveragePanel'
+import { RelationshipMapFrontierPanel } from '@/components/relationship-map/RelationshipMapFrontierPanel'
 
 type Props = {
   adminEmail: string
 }
+
+type WorkspaceTab = 'source-health' | 'coverage' | 'frontier'
 
 type ThemeHealthRow = {
   theme: string
@@ -42,7 +45,7 @@ type Rollup = {
 export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const activeTab = searchParams.get('tab') === 'coverage' ? 'coverage' : 'source-health'
+  const activeTab = normalizeTab(searchParams.get('tab'))
   const [payload, setPayload] = useState<unknown>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown>(null)
@@ -77,12 +80,12 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
   const sortedThemes = useMemo(() => [...themes].sort(compareThemeRows), [themes])
   const unavailable = Boolean(error && !loading)
 
-  function selectTab(tab: 'source-health' | 'coverage') {
+  function selectTab(tab: WorkspaceTab) {
     const params = new URLSearchParams(searchParams.toString())
-    if (tab === 'coverage') {
-      params.set('tab', 'coverage')
-    } else {
+    if (tab === 'source-health') {
       params.delete('tab')
+    } else {
+      params.set('tab', tab)
     }
     const query = params.toString()
     router.replace(query ? `/relationship-map?${query}` : '/relationship-map', { scroll: false })
@@ -95,7 +98,7 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
           <div>
             <p className="eyebrow">Correlation system</p>
             <h1>Relationship map</h1>
-            <p className="small">Source health and current onboarded-universe coverage for relationship edges.</p>
+            <p className="small">Source health, current universe coverage, and growth frontier for relationship edges.</p>
           </div>
           <div className="small">Admin: {adminEmail}</div>
         </div>
@@ -120,9 +123,19 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
         >
           Coverage
         </button>
+        <button
+          aria-selected={activeTab === 'frontier'}
+          className={activeTab === 'frontier' ? 'active' : ''}
+          onClick={() => selectTab('frontier')}
+          role="tab"
+          type="button"
+        >
+          Frontier / Grow
+        </button>
       </div>
 
       {activeTab === 'coverage' ? <RelationshipMapCoveragePanel /> : null}
+      {activeTab === 'frontier' ? <RelationshipMapFrontierPanel /> : null}
 
       {activeTab !== 'source-health' ? null : (
         <>
@@ -221,6 +234,11 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
       )}
     </div>
   )
+}
+
+function normalizeTab(value: string | null): WorkspaceTab {
+  if (value === 'coverage' || value === 'frontier') return value
+  return 'source-health'
 }
 
 function KpiCard({
