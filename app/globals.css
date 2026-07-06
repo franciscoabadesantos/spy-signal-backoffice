@@ -565,6 +565,44 @@ button:disabled {
   align-items: start;
 }
 
+.relationship-map-frontier-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.relationship-map-frontier-toolbar-actions {
+  grid-template-columns: auto auto;
+}
+
+.relationship-map-select-checkbox {
+  width: auto;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 0;
+}
+
+.relationship-map-symbol-cell {
+  display: grid;
+  gap: 4px;
+}
+
+.relationship-map-action-button {
+  width: auto;
+  min-width: 92px;
+  white-space: nowrap;
+}
+
+.relationship-map-onboarding-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
 .relationship-map-heatmap,
 .relationship-map-country-table {
   display: grid;
@@ -760,6 +798,11 @@ button:disabled {
   background: #fef2f2;
   border: 1px solid #fecaca;
   color: #991b1b;
+}
+
+.error-inline {
+  color: #991b1b;
+  font-weight: 600;
 }
 
 .warning {
@@ -2455,6 +2498,7 @@ details summary {
   .relationship-map-summary-grid,
   .relationship-map-coverage-grid,
   .relationship-map-frontier-grid,
+  .relationship-map-frontier-toolbar,
   .month-toolbar,
   .coverage-summary,
   .data-range-form,

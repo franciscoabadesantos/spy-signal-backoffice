@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { requestClientJson } from '@/lib/client-json'
 import { asRecord, firstList, type RowRecord } from '@/lib/payload'
+
+const ONBOARD_BATCH_CAP = 25
 
 type FrontierCandidate = {
   symbol: string
@@ -37,10 +39,32 @@ type FrontierPayload = {
   untappedThemes: FrontierTheme[]
 }
 
+type OnboardingRow = {
+  key: string
+  symbol: string
+  name: string | null
+  region: string
+  exchange: string | null
+  status: string
+  registryKey: string | null
+  normalizedSymbol: string | null
+  validationReason: string | null
+  validationFlowRunId: string | null
+  backfillFlowRunId: string | null
+  result: string | null
+  loading: boolean
+  error: string | null
+  updatedAt: string
+}
+
 export function RelationshipMapFrontierPanel() {
   const [payload, setPayload] = useState<FrontierPayload | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown>(null)
+  const [selectedSymbols, setSelectedSymbols] = useState<Set<string>>(() => new Set())
+  const [onboarding, setOnboarding] = useState<Record<string, OnboardingRow>>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -69,7 +93,164 @@ export function RelationshipMapFrontierPanel() {
 
   const candidates = useMemo(() => payload?.adjacentCandidates ?? [], [payload])
   const themes = useMemo(() => payload?.untappedThemes ?? [], [payload])
+  const selectedCandidates = useMemo(
+    () => candidates.filter((candidate) => selectedSymbols.has(candidateKey(candidate))),
+    [candidates, selectedSymbols]
+  )
+  const onboardingRows = useMemo(
+    () => Object.values(onboarding).sort((a, b) => a.symbol.localeCompare(b.symbol)),
+    [onboarding]
+  )
   const unavailable = Boolean(error && !loading)
+
+  const refreshStatuses = useCallback(async (rows?: OnboardingRow[]) => {
+    const sourceRows = rows ?? Object.values(onboarding)
+    const targets = sourceRows.filter((row) => row.status !== 'ready' && row.status !== 'rejected')
+    if (targets.length === 0) return
+    const results = await Promise.allSettled(targets.map(async (row) => {
+      const query = new URLSearchParams({ ticker: row.symbol, region: row.region })
+      if (row.exchange) query.set('exchange', row.exchange)
+      const response = await requestClientJson(`/api/tickers/status?${query.toString()}`)
+      return { row, response }
+    }))
+
+    setOnboarding((current) => {
+      const next = { ...current }
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          const candidate = rowToCandidate(result.value.row)
+          next[result.value.row.key] = normalizeOnboardingRow(result.value.response, candidate, result.value.row.result)
+        }
+      }
+      return next
+    })
+  }, [onboarding])
+
+  useEffect(() => {
+    const inFlight = Object.values(onboarding).filter((row) => row.status !== 'ready' && row.status !== 'rejected')
+    if (inFlight.length === 0) return
+    const timer = window.setInterval(() => {
+      void refreshStatuses(inFlight)
+    }, 15000)
+    return () => window.clearInterval(timer)
+  }, [onboarding, refreshStatuses])
+
+  function toggleSelected(candidate: FrontierCandidate, checked: boolean) {
+    const key = candidateKey(candidate)
+    setSelectedSymbols((current) => {
+      const next = new Set(current)
+      if (checked) {
+        if (next.size >= ONBOARD_BATCH_CAP && !next.has(key)) {
+          setActionError(`Select at most ${ONBOARD_BATCH_CAP} candidates per onboarding request.`)
+          return next
+        }
+        next.add(key)
+      } else {
+        next.delete(key)
+      }
+      setActionError(null)
+      return next
+    })
+  }
+
+  async function onboardSelected() {
+    if (selectedCandidates.length === 0) return
+    if (selectedCandidates.length > ONBOARD_BATCH_CAP) {
+      setActionError(`Select at most ${ONBOARD_BATCH_CAP} candidates per onboarding request.`)
+      return
+    }
+    const confirmed = window.confirm(
+      `Onboard ${selectedCandidates.length} candidate${selectedCandidates.length === 1 ? '' : 's'}? They appear in the map on the next daily build.`
+    )
+    if (!confirmed) return
+    await onboardCandidates(selectedCandidates)
+  }
+
+  async function onboardCandidates(targets: FrontierCandidate[]) {
+    if (targets.length === 0) return
+    setSubmitting(true)
+    setActionError(null)
+    const now = new Date().toISOString()
+    setOnboarding((current) => {
+      const next = { ...current }
+      for (const candidate of targets) {
+        const key = candidateKey(candidate)
+        next[key] = {
+          ...(next[key] ?? baseOnboardingRow(candidate, now)),
+          loading: true,
+          error: null,
+          updatedAt: now,
+        }
+      }
+      return next
+    })
+
+    const results = await Promise.allSettled(targets.map(async (candidate) => {
+      const region = candidateRegion(candidate)
+      const response = await requestClientJson('/api/tickers/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker: candidate.symbol, region }),
+      })
+      return { candidate, response }
+    }))
+
+    setOnboarding((current) => {
+      const next = { ...current }
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          const { candidate, response } = result.value
+          next[candidateKey(candidate)] = normalizeOnboardingRow(response, candidate, null)
+        } else {
+          const candidate = targets[results.indexOf(result)]
+          const key = candidateKey(candidate)
+          next[key] = {
+            ...(next[key] ?? baseOnboardingRow(candidate)),
+            loading: false,
+            error: readErrorMessage(result.reason),
+            updatedAt: new Date().toISOString(),
+          }
+        }
+      }
+      return next
+    })
+    setSelectedSymbols((current) => {
+      const next = new Set(current)
+      for (const candidate of targets) next.delete(candidateKey(candidate))
+      return next
+    })
+    setSubmitting(false)
+  }
+
+  async function removeOnboarding(row: OnboardingRow) {
+    const confirmed = window.confirm(`${row.symbol} will be removed from onboarding before the daily build. Continue?`)
+    if (!confirmed) return
+    setOnboarding((current) => ({
+      ...current,
+      [row.key]: { ...row, loading: true, error: null, updatedAt: new Date().toISOString() },
+    }))
+    try {
+      const response = await requestClientJson('/api/tickers/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticker: row.symbol,
+          region: row.region,
+          exchange: row.exchange,
+          reason: 'operator_removed_before_daily_build',
+        }),
+      })
+      setOnboarding((current) => ({
+        ...current,
+        [row.key]: normalizeOnboardingRow(response, rowToCandidate(row), null),
+      }))
+    } catch (removeError) {
+      setOnboarding((current) => ({
+        ...current,
+        [row.key]: { ...row, loading: false, error: readErrorMessage(removeError), updatedAt: new Date().toISOString() },
+      }))
+    }
+  }
 
   return (
     <section className="card" id="relationship-map-frontier">
@@ -96,10 +277,25 @@ export function RelationshipMapFrontierPanel() {
             <h3>Adjacent candidates</h3>
             <p className="small">Names most connected to tracked ETF neighborhoods and still missing from price coverage.</p>
           </div>
+          <div className="relationship-map-frontier-toolbar">
+            <div className="small">
+              {selectedCandidates.length} selected. Onboarding appears in the map on the next daily build.
+            </div>
+            <div className="table-actions relationship-map-frontier-toolbar-actions">
+              <button className="secondary" type="button" onClick={() => setSelectedSymbols(new Set())} disabled={selectedCandidates.length === 0 || submitting}>
+                Clear
+              </button>
+              <button className="primary" type="button" onClick={() => void onboardSelected()} disabled={selectedCandidates.length === 0 || submitting}>
+                {submitting ? 'Onboarding...' : `Onboard selected (${selectedCandidates.length})`}
+              </button>
+            </div>
+          </div>
+          {actionError ? <div className="error">{actionError}</div> : null}
           <div className="table-wrap relationship-map-table">
             <table className="registry-table">
               <thead>
                 <tr>
+                  <th>Select</th>
                   <th>Symbol</th>
                   <th>Name</th>
                   <th>Country</th>
@@ -107,30 +303,60 @@ export function RelationshipMapFrontierPanel() {
                   <th>ETFs</th>
                   <th>Adjacency</th>
                   <th>Weight</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td className="small" colSpan={7}>Loading frontier candidates...</td>
+                    <td className="small" colSpan={9}>Loading frontier candidates...</td>
                   </tr>
                 ) : null}
                 {!loading && candidates.length === 0 ? (
                   <tr>
-                    <td className="small" colSpan={7}>{unavailable ? 'Relationship-map frontier is unavailable.' : 'No adjacent candidates were returned.'}</td>
+                    <td className="small" colSpan={9}>{unavailable ? 'Relationship-map frontier is unavailable.' : 'No adjacent candidates were returned.'}</td>
                   </tr>
                 ) : null}
-                {!loading ? candidates.map((candidate) => (
-                  <tr key={candidate.symbol}>
-                    <td><strong>{candidate.symbol}</strong></td>
-                    <td>{candidate.name ?? '-'}</td>
-                    <td>{candidate.country}</td>
-                    <td>{candidate.themes.join(', ') || '-'}</td>
-                    <td>{candidate.etfs.join(', ') || '-'}</td>
-                    <td>{formatScore(candidate.adjacency)}</td>
-                    <td>{formatRatio(candidate.weight)}</td>
-                  </tr>
-                )) : null}
+                {!loading ? candidates.map((candidate) => {
+                  const key = candidateKey(candidate)
+                  const selected = selectedSymbols.has(key)
+                  const row = onboarding[key]
+                  const selectable = !row && (selected || selectedSymbols.size < ONBOARD_BATCH_CAP)
+                  return (
+                    <tr key={key}>
+                      <td>
+                        <input
+                          aria-label={`Select ${candidate.symbol}`}
+                          checked={selected}
+                          className="relationship-map-select-checkbox"
+                          disabled={!selectable || submitting}
+                          onChange={(event) => toggleSelected(candidate, event.target.checked)}
+                          type="checkbox"
+                        />
+                      </td>
+                      <td className="relationship-map-symbol-cell">
+                        <strong>{candidate.symbol}</strong>
+                        {row ? <span className={`badge ${statusBadgeClass(row.status)}`}>{row.loading ? 'updating' : row.status}</span> : null}
+                      </td>
+                      <td>{candidate.name ?? '-'}</td>
+                      <td>{candidate.country}</td>
+                      <td>{candidate.themes.join(', ') || '-'}</td>
+                      <td>{candidate.etfs.join(', ') || '-'}</td>
+                      <td>{formatScore(candidate.adjacency)}</td>
+                      <td>{formatRatio(candidate.weight)}</td>
+                      <td>
+                        <button
+                          className="secondary relationship-map-action-button"
+                          disabled={submitting || Boolean(row)}
+                          onClick={() => void onboardCandidates([candidate])}
+                          type="button"
+                        >
+                          Onboard
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                }) : null}
               </tbody>
             </table>
           </div>
@@ -179,6 +405,60 @@ export function RelationshipMapFrontierPanel() {
           </div>
         </div>
       </section>
+
+      <section className="relationship-map-onboarding-panel" aria-label="Ticker onboarding status">
+        <div className="split-row">
+          <div>
+            <h3>Onboarding</h3>
+            <p className="small">Appears in the map on the next daily build. Pending and backfilling tickers can still be removed.</p>
+          </div>
+          <button className="secondary relationship-map-action-button" type="button" onClick={() => void refreshStatuses()} disabled={onboardingRows.length === 0}>
+            Refresh
+          </button>
+        </div>
+        <div className="table-wrap relationship-map-table">
+          <table className="registry-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Home</th>
+                <th>Status</th>
+                <th>Registry key</th>
+                <th>Reason</th>
+                <th>Updated</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {onboardingRows.length === 0 ? (
+                <tr>
+                  <td className="small" colSpan={7}>No onboarding requests in this session.</td>
+                </tr>
+              ) : null}
+              {onboardingRows.map((row) => (
+                <tr key={row.key}>
+                  <td><strong>{row.symbol}</strong>{row.name ? <div className="small">{row.name}</div> : null}</td>
+                  <td>{row.region.toUpperCase()}</td>
+                  <td><span className={`badge ${statusBadgeClass(row.status)}`}>{row.loading ? 'updating' : row.status}</span></td>
+                  <td className="small">{row.registryKey ?? '-'}</td>
+                  <td>{row.error ? <span className="error-inline">{row.error}</span> : row.validationReason ?? '-'}</td>
+                  <td className="small">{shortTimestamp(row.updatedAt)}</td>
+                  <td>
+                    <button
+                      className="secondary relationship-map-action-button"
+                      disabled={row.loading || !isRemovableOnboardingStatus(row.status)}
+                      onClick={() => void removeOnboarding(row)}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </section>
   )
 }
@@ -205,6 +485,99 @@ function FrontierError({ error }: { error: unknown }) {
       {typeof record?.upstreamContentType === 'string' ? <div className="small">Content-Type: {record.upstreamContentType}</div> : null}
       {typeof record?.upstreamBodyPreview === 'string' && record.upstreamBodyPreview ? <pre>{record.upstreamBodyPreview}</pre> : null}
     </div>
+  )
+}
+
+function candidateRegion(candidate: FrontierCandidate): string {
+  const country = String(candidate.country || '').trim().toLowerCase()
+  return country && country !== 'unknown' ? country : 'global'
+}
+
+function candidateKey(candidate: FrontierCandidate): string {
+  return onboardingKey(candidate.symbol, candidateRegion(candidate), null)
+}
+
+function onboardingKey(symbol: string, region: string, exchange: string | null): string {
+  return `${symbol.trim().toUpperCase()}|${region.trim().toLowerCase() || 'us'}|${exchange?.trim().toUpperCase() || 'default'}`
+}
+
+function baseOnboardingRow(candidate: FrontierCandidate, updatedAt = new Date().toISOString()): OnboardingRow {
+  const region = candidateRegion(candidate)
+  return {
+    key: candidateKey(candidate),
+    symbol: candidate.symbol.trim().toUpperCase(),
+    name: candidate.name,
+    region,
+    exchange: null,
+    status: 'pending_validation',
+    registryKey: null,
+    normalizedSymbol: null,
+    validationReason: null,
+    validationFlowRunId: null,
+    backfillFlowRunId: null,
+    result: null,
+    loading: false,
+    error: null,
+    updatedAt,
+  }
+}
+
+function normalizeOnboardingRow(payload: unknown, candidate: FrontierCandidate, resultFallback: string | null): OnboardingRow {
+  const record = asRecord(payload) ?? {}
+  const symbol = readString(record, ['ticker', 'symbol'])?.toUpperCase() ?? candidate.symbol.trim().toUpperCase()
+  const region = readString(record, ['region'])?.toLowerCase() ?? candidateRegion(candidate)
+  const exchange = readString(record, ['exchange'])
+  return {
+    key: onboardingKey(symbol, region, exchange),
+    symbol,
+    name: candidate.name,
+    region,
+    exchange,
+    status: readString(record, ['status']) ?? 'pending_validation',
+    registryKey: readString(record, ['registry_key', 'registryKey']),
+    normalizedSymbol: readString(record, ['normalized_symbol', 'normalizedSymbol']),
+    validationReason: readString(record, ['validation_reason', 'validationReason']),
+    validationFlowRunId: readString(record, ['validation_flow_run_id', 'validationFlowRunId']),
+    backfillFlowRunId: readString(record, ['backfill_flow_run_id', 'backfillFlowRunId']),
+    result: readString(record, ['result']) ?? resultFallback,
+    loading: false,
+    error: null,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function rowToCandidate(row: OnboardingRow): FrontierCandidate {
+  return {
+    symbol: row.symbol,
+    name: row.name,
+    country: row.region.toUpperCase(),
+    themes: [],
+    etfs: [],
+    adjacency: 0,
+    score: 0,
+    weight: 0,
+  }
+}
+
+function isRemovableOnboardingStatus(status: string): boolean {
+  return ['pending_validation', 'validating', 'pending_backfill', 'backfilling'].includes(status)
+}
+
+function statusBadgeClass(status: string): string {
+  if (status === 'ready') return 'completed'
+  if (status === 'rejected') return 'failed'
+  if (status === 'validating' || status === 'backfilling') return 'running'
+  if (status === 'pending_validation' || status === 'pending_backfill') return 'queued'
+  return 'muted'
+}
+
+function readErrorMessage(error: unknown): string {
+  const record = asRecord(error)
+  const detail = asRecord(record?.detail)
+  return (
+    readString(detail, ['message', 'error'])
+    ?? readString(record, ['message', 'error', 'detail'])
+    ?? (error instanceof Error ? error.message : 'Request failed.')
   )
 }
 
