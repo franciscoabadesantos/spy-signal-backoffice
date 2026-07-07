@@ -9,7 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "tsc --module commonjs --target ES2022 --moduleResolution node --outDir /tmp/spy-signal-backoffice-tests --esModuleInterop --skipLibCheck --types node tests/ticker-readiness.test.ts lib/ticker-readiness.ts && node --test /tmp/spy-signal-backoffice-tests/tests/ticker-readiness.test.js"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.0.11",

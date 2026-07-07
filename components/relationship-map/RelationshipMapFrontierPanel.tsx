@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { requestClientJson } from '@/lib/client-json'
 import { asRecord, firstList, type RowRecord } from '@/lib/payload'
+import { tickerReadinessBadge, type TickerReadinessBadge } from '@/lib/ticker-readiness'
 
 const ONBOARD_BATCH_CAP = 25
 
@@ -15,6 +16,7 @@ type FrontierCandidate = {
   adjacency: number
   score: number
   weight: number
+  readiness: TickerReadinessBadge
 }
 
 type FrontierTheme = {
@@ -46,6 +48,7 @@ type OnboardingRow = {
   region: string
   exchange: string | null
   status: string
+  readiness: TickerReadinessBadge
   registryKey: string | null
   normalizedSymbol: string | null
   validationReason: string | null
@@ -251,6 +254,10 @@ export function RelationshipMapFrontierPanel() {
       adjacency: 0,
       score: 0,
       weight: 0,
+      readiness: tickerReadinessBadge({
+        coverageState: 'not_tracked',
+        registryStatus: 'not_tracked',
+      }),
     }))
     setActionError(null)
     setAdHocSymbols('')
@@ -378,25 +385,28 @@ export function RelationshipMapFrontierPanel() {
                   <th>ETFs</th>
                   <th>Adjacency</th>
                   <th>Weight</th>
+                  <th>Readiness</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td className="small" colSpan={9}>Loading frontier candidates...</td>
+                    <td className="small" colSpan={10}>Loading frontier candidates...</td>
                   </tr>
                 ) : null}
                 {!loading && candidates.length === 0 ? (
                   <tr>
-                    <td className="small" colSpan={9}>{unavailable ? 'Relationship-map frontier is unavailable.' : 'No adjacent candidates were returned.'}</td>
+                    <td className="small" colSpan={10}>{unavailable ? 'Relationship-map frontier is unavailable.' : 'No adjacent candidates were returned.'}</td>
                   </tr>
                 ) : null}
                 {!loading ? candidates.map((candidate) => {
                   const key = candidateKey(candidate)
                   const selected = selectedSymbols.has(key)
                   const row = onboarding[key]
-                  const selectable = !row && (selected || selectedSymbols.size < ONBOARD_BATCH_CAP)
+                  const readiness = row?.readiness ?? candidate.readiness
+                  const rejected = readiness.label === 'Rejected'
+                  const selectable = !row && !rejected && (selected || selectedSymbols.size < ONBOARD_BATCH_CAP)
                   return (
                     <tr key={key}>
                       <td>
@@ -420,13 +430,17 @@ export function RelationshipMapFrontierPanel() {
                       <td>{formatScore(candidate.adjacency)}</td>
                       <td>{formatRatio(candidate.weight)}</td>
                       <td>
+                        <span className={`badge ${readiness.className}`}>{readiness.label}</span>
+                        {readiness.diagnostic ? <div className="small">{readiness.diagnostic}</div> : null}
+                      </td>
+                      <td>
                         <button
                           className="secondary relationship-map-action-button"
-                          disabled={submitting || Boolean(row)}
+                          disabled={submitting || Boolean(row) || rejected}
                           onClick={() => void onboardCandidates([candidate])}
                           type="button"
                         >
-                          Onboard
+                          {readiness.label === 'Tracked' ? 'Onboard' : 'Backfill'}
                         </button>
                       </td>
                     </tr>
@@ -551,9 +565,14 @@ export function RelationshipMapFrontierPanel() {
                 <tr key={row.key}>
                   <td><strong>{row.symbol}</strong>{row.name ? <div className="small">{row.name}</div> : null}</td>
                   <td>{row.region.toUpperCase()}</td>
-                  <td><span className={`badge ${statusBadgeClass(row.status)}`}>{row.loading ? 'updating' : row.status}</span></td>
+                  <td>
+                    <span className={`badge ${row.loading ? statusBadgeClass(row.status) : row.readiness.className}`}>
+                      {row.loading ? 'updating' : row.readiness.label}
+                    </span>
+                    {!row.loading && row.status ? <div className="small">{row.status}</div> : null}
+                  </td>
                   <td className="small">{row.registryKey ?? '-'}</td>
-                  <td>{row.error ? <span className="error-inline">{row.error}</span> : row.validationReason ?? '-'}</td>
+                  <td>{row.error ? <span className="error-inline">{row.error}</span> : row.validationReason ?? row.readiness.diagnostic ?? '-'}</td>
                   <td className="small">{shortTimestamp(row.updatedAt)}</td>
                   <td>
                     <button
@@ -622,6 +641,10 @@ function baseOnboardingRow(candidate: FrontierCandidate, updatedAt = new Date().
     region,
     exchange: null,
     status: 'pending_validation',
+    readiness: tickerReadinessBadge({
+      coverageState: 'pending_validation',
+      registryStatus: 'pending_validation',
+    }),
     registryKey: null,
     normalizedSymbol: null,
     validationReason: null,
@@ -639,13 +662,15 @@ function normalizeOnboardingRow(payload: unknown, candidate: FrontierCandidate, 
   const symbol = readString(record, ['ticker', 'symbol'])?.toUpperCase() ?? candidate.symbol.trim().toUpperCase()
   const region = readString(record, ['region'])?.toLowerCase() ?? candidateRegion(candidate)
   const exchange = readString(record, ['exchange'])
+  const status = readString(record, ['status']) ?? 'pending_validation'
   return {
     key: onboardingKey(symbol, region, exchange),
     symbol,
     name: candidate.name,
     region,
     exchange,
-    status: readString(record, ['status']) ?? 'pending_validation',
+    status,
+    readiness: readinessFromRecord(record, status),
     registryKey: readString(record, ['registry_key', 'registryKey']),
     normalizedSymbol: readString(record, ['normalized_symbol', 'normalizedSymbol']),
     validationReason: readString(record, ['validation_reason', 'validationReason']),
@@ -668,6 +693,7 @@ function rowToCandidate(row: OnboardingRow): FrontierCandidate {
     adjacency: 0,
     score: 0,
     weight: 0,
+    readiness: row.readiness,
   }
 }
 
@@ -722,7 +748,23 @@ function normalizeCandidate(row: unknown): FrontierCandidate | null {
     adjacency: readNumber(record, ['adjacency']) ?? 0,
     score: readNumber(record, ['score']) ?? 0,
     weight: readNumber(record, ['weight']) ?? 0,
+    readiness: readinessFromRecord(record),
   }
+}
+
+function readinessFromRecord(record: RowRecord | null | undefined, fallbackStatus?: string | null): TickerReadinessBadge {
+  return tickerReadinessBadge({
+    isTracked: readBoolean(record, ['isTracked', 'is_tracked', 'tracked']),
+    coverageState: readString(record, ['coverageState', 'coverage_state', 'readiness', 'readiness_state']),
+    hasPrices: readBoolean(record, ['hasPrices', 'has_prices', 'pricesReady', 'prices_ready']),
+    hasTechnicals: readBoolean(record, ['hasTechnicals', 'has_technicals', 'technicalsReady', 'technicals_ready']),
+    hasScorecard: readBoolean(record, ['hasScorecard', 'has_scorecard', 'scorecardReady', 'scorecard_ready']),
+    missingInputs: readStringList(record?.missingInputs ?? record?.missing_inputs),
+    registryStatus: readString(record, ['registryStatus', 'registry_status', 'status']) ?? fallbackStatus,
+    validationStatus: readString(record, ['validationStatus', 'validation_status', 'validationResult', 'validation_result']),
+    promotionStatus: readString(record, ['promotionStatus', 'promotion_status']),
+    scorecardReadiness: readString(record, ['scorecardReadiness', 'scorecard_readiness', 'buildStatus', 'build_status']),
+  })
 }
 
 function normalizeTheme(row: unknown): FrontierTheme | null {
@@ -758,6 +800,21 @@ function readNumber(record: RowRecord | null | undefined, keys: string[]): numbe
     if (typeof value === 'string' && value.trim()) {
       const parsed = Number(value)
       if (Number.isFinite(parsed)) return parsed
+    }
+  }
+  return null
+}
+
+function readBoolean(record: RowRecord | null | undefined, keys: string[]): boolean | null {
+  if (!record) return null
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'number') return value !== 0
+    if (typeof value === 'string' && value.trim()) {
+      const normalized = value.trim().toLowerCase()
+      if (['true', '1', 'yes', 'y'].includes(normalized)) return true
+      if (['false', '0', 'no', 'n'].includes(normalized)) return false
     }
   }
   return null
