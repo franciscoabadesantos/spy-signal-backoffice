@@ -106,6 +106,12 @@ export function RelationshipMapFrontierPanel() {
     [onboarding]
   )
   const unavailable = Boolean(error && !loading)
+  const adHocKnownCandidates = useMemo(() => {
+    const typed = new Set(
+      adHocSymbols.split(/[\s,]+/).map((value) => value.trim().toUpperCase()).filter(Boolean),
+    )
+    return candidates.filter((candidate) => typed.has(candidate.symbol.toUpperCase())).map((c) => c.symbol)
+  }, [adHocSymbols, candidates])
 
   const refreshStatuses = useCallback(async (rows?: OnboardingRow[]) => {
     const sourceRows = rows ?? Object.values(onboarding)
@@ -251,17 +257,17 @@ export function RelationshipMapFrontierPanel() {
     await onboardCandidates(synthetic)
   }
 
-  async function onboardAllCandidates() {
-    if (candidates.length === 0) return
+  async function onboardSelectedBulk() {
+    if (selectedCandidates.length === 0) return
     const confirmed = window.confirm(
-      `Urgency: onboard ALL ${candidates.length} adjacent candidates? They full-backfill in the background (Prefect) and appear in the map on the next daily build.`,
+      `Bulk-onboard ${selectedCandidates.length} selected candidate(s)? They full-backfill now in the background (Prefect handles the concurrency) and appear in the map on the next daily build.`,
     )
     if (!confirmed) return
     setBulkSubmitting(true)
     setBulkMessage(null)
-    // The bulk endpoint takes one region + a ticker list, so group candidates by region.
+    // The bulk endpoint takes one region + a ticker list, so group the selection by region.
     const byRegion = new Map<string, string[]>()
-    for (const candidate of candidates) {
+    for (const candidate of selectedCandidates) {
       const region = candidateRegion(candidate)
       const list = byRegion.get(region) ?? []
       list.push(candidate.symbol)
@@ -278,7 +284,8 @@ export function RelationshipMapFrontierPanel() {
         const record = asRecord(response)
         scheduled += typeof record?.requested_count === 'number' ? record.requested_count : tickers.length
       }
-      setBulkMessage(`Scheduled ${scheduled} ticker(s) for full backfill — running in the background; they appear on the next daily build.`)
+      setBulkMessage(`Scheduled ${scheduled} ticker(s) for full backfill — running now in the background; they appear in the map on the next daily build.`)
+      setSelectedSymbols(new Set())
     } catch (bulkError) {
       setBulkMessage(readErrorMessage(bulkError))
     } finally {
@@ -343,7 +350,7 @@ export function RelationshipMapFrontierPanel() {
           </div>
           <div className="relationship-map-frontier-toolbar">
             <div className="small">
-              {selectedCandidates.length} selected. Onboarding appears in the map on the next daily build.
+              {selectedCandidates.length} selected. Backfills now in the background; appears in the map on the next daily build.
             </div>
             <div className="table-actions relationship-map-frontier-toolbar-actions">
               <button className="secondary" type="button" onClick={() => setSelectedSymbols(new Set())} disabled={selectedCandidates.length === 0 || submitting}>
@@ -352,8 +359,8 @@ export function RelationshipMapFrontierPanel() {
               <button className="primary" type="button" onClick={() => void onboardSelected()} disabled={selectedCandidates.length === 0 || submitting}>
                 {submitting ? 'Onboarding...' : `Onboard selected (${selectedCandidates.length})`}
               </button>
-              <button className="secondary" type="button" onClick={() => void onboardAllCandidates()} disabled={candidates.length === 0 || bulkSubmitting}>
-                {bulkSubmitting ? 'Scheduling…' : `Urgency: onboard all (${candidates.length})`}
+              <button className="secondary" type="button" onClick={() => void onboardSelectedBulk()} disabled={selectedCandidates.length === 0 || bulkSubmitting}>
+                {bulkSubmitting ? 'Scheduling…' : `Bulk onboard selected (${selectedCandidates.length})`}
               </button>
             </div>
           </div>
@@ -477,8 +484,8 @@ export function RelationshipMapFrontierPanel() {
       <section className="card compact-card relationship-map-adhoc-panel" aria-label="Direct ticker backfill">
         <h3>Backfill tickers directly</h3>
         <p className="small">
-          Type symbols (need not be on the list) to full-backfill — prices, fundamentals, earnings, technicals.
-          Appears in the map on the next daily build.
+          Type symbols (need not be on the list) to onboard + full-backfill now — prices, fundamentals, earnings,
+          technicals. Runs in the background; appears in the map on the next daily build.
         </p>
         <div className="relationship-map-frontier-toolbar">
           <input
@@ -504,6 +511,11 @@ export function RelationshipMapFrontierPanel() {
             Full backfill
           </button>
         </div>
+        {adHocKnownCandidates.length > 0 ? (
+          <div className="small">
+            {adHocKnownCandidates.join(', ')} already on the adjacent-candidates list above — you can select there instead.
+          </div>
+        ) : null}
       </section>
 
       <section className="relationship-map-onboarding-panel" aria-label="Ticker onboarding status">
