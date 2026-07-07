@@ -374,7 +374,7 @@ export function RelationshipMapFrontierPanel() {
           {actionError ? <div className="error">{actionError}</div> : null}
           {bulkMessage ? <div className="small">{bulkMessage}</div> : null}
           <div className="table-wrap relationship-map-table">
-            <table className="registry-table">
+            <table className="registry-table relationship-map-frontier-candidates-table">
               <thead>
                 <tr>
                   <th>Select</th>
@@ -419,9 +419,11 @@ export function RelationshipMapFrontierPanel() {
                           type="checkbox"
                         />
                       </td>
-                      <td className="relationship-map-symbol-cell">
-                        <strong>{candidate.symbol}</strong>
-                        {row ? <span className={`badge ${statusBadgeClass(row.status)}`}>{row.loading ? 'updating' : row.status}</span> : null}
+                      <td>
+                        <div className="relationship-map-symbol-cell">
+                          <strong>{candidate.symbol}</strong>
+                          {row ? <span className={`badge ${statusBadgeClass(row.status)}`}>{row.loading ? 'updating' : row.status}</span> : null}
+                        </div>
                       </td>
                       <td>{candidate.name ?? '-'}</td>
                       <td>{candidate.country}</td>

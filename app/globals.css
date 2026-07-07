@@ -502,6 +502,62 @@ button:disabled {
   margin-top: 12px;
 }
 
+.relationship-map-frontier-candidates-table {
+  min-width: 1120px;
+  table-layout: fixed;
+}
+
+.relationship-map-frontier-candidates-table th:nth-child(1),
+.relationship-map-frontier-candidates-table td:nth-child(1) {
+  width: 80px;
+}
+
+.relationship-map-frontier-candidates-table th:nth-child(2),
+.relationship-map-frontier-candidates-table td:nth-child(2) {
+  width: 130px;
+}
+
+.relationship-map-frontier-candidates-table th:nth-child(3),
+.relationship-map-frontier-candidates-table td:nth-child(3) {
+  width: 210px;
+}
+
+.relationship-map-frontier-candidates-table th:nth-child(4),
+.relationship-map-frontier-candidates-table td:nth-child(4) {
+  width: 96px;
+}
+
+.relationship-map-frontier-candidates-table th:nth-child(7),
+.relationship-map-frontier-candidates-table td:nth-child(7),
+.relationship-map-frontier-candidates-table th:nth-child(8),
+.relationship-map-frontier-candidates-table td:nth-child(8) {
+  width: 96px;
+}
+
+.relationship-map-frontier-candidates-table th:nth-child(9),
+.relationship-map-frontier-candidates-table td:nth-child(9) {
+  width: 160px;
+}
+
+.relationship-map-frontier-candidates-table th:nth-child(10),
+.relationship-map-frontier-candidates-table td:nth-child(10) {
+  width: 116px;
+}
+
+.relationship-map-frontier-candidates-table td {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.relationship-map-frontier-candidates-table td:nth-child(3) {
+  overflow-wrap: anywhere;
+}
+
+.relationship-map-frontier-candidates-table td:nth-child(5),
+.relationship-map-frontier-candidates-table td:nth-child(6) {
+  white-space: nowrap;
+}
+
 .relationship-map-flags {
   margin-top: 0;
 }
@@ -585,8 +641,10 @@ button:disabled {
 }
 
 .relationship-map-symbol-cell {
-  display: grid;
+  display: inline-grid;
+  max-width: 100%;
   gap: 4px;
+  white-space: nowrap;
 }
 
 .relationship-map-action-button {
