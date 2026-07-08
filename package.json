@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsc --module commonjs --target ES2022 --moduleResolution node --outDir /tmp/spy-signal-backoffice-tests --esModuleInterop --skipLibCheck --types node tests/ticker-readiness.test.ts lib/ticker-readiness.ts && node --test /tmp/spy-signal-backoffice-tests/tests/ticker-readiness.test.js"
+    "test": "tsc --module commonjs --target ES2022 --moduleResolution node --outDir /tmp/spy-signal-backoffice-tests --esModuleInterop --skipLibCheck --types node tests/ticker-readiness.test.ts tests/relationship-map-onboarding.test.ts lib/ticker-readiness.ts lib/relationship-map-onboarding.ts lib/payload.ts && node --test /tmp/spy-signal-backoffice-tests/tests/ticker-readiness.test.js /tmp/spy-signal-backoffice-tests/tests/relationship-map-onboarding.test.js"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.0.11",

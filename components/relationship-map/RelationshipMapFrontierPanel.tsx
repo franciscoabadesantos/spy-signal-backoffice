@@ -3,21 +3,24 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { requestClientJson } from '@/lib/client-json'
 import { asRecord, firstList, type RowRecord } from '@/lib/payload'
-import { tickerReadinessBadge, type TickerReadinessBadge } from '@/lib/ticker-readiness'
+import {
+  baseOnboardingRow,
+  candidateKey,
+  candidateRegion,
+  isRemovableOnboardingStatus,
+  normalizeOnboardingRow,
+  readinessFromRecord,
+  rowToCandidate,
+  seedOnboardingRows,
+  statusBadgeClass,
+  type OnboardingRow,
+  type RelationshipMapOnboardingCandidate,
+} from '@/lib/relationship-map-onboarding'
+import { tickerReadinessBadge } from '@/lib/ticker-readiness'
 
 const ONBOARD_BATCH_CAP = 25
 
-type FrontierCandidate = {
-  symbol: string
-  name: string | null
-  country: string
-  themes: string[]
-  etfs: string[]
-  adjacency: number
-  score: number
-  weight: number
-  readiness: TickerReadinessBadge
-}
+type FrontierCandidate = RelationshipMapOnboardingCandidate
 
 type FrontierTheme = {
   theme: string
@@ -39,25 +42,6 @@ type FrontierPayload = {
   }
   adjacentCandidates: FrontierCandidate[]
   untappedThemes: FrontierTheme[]
-}
-
-type OnboardingRow = {
-  key: string
-  symbol: string
-  name: string | null
-  region: string
-  exchange: string | null
-  status: string
-  readiness: TickerReadinessBadge
-  registryKey: string | null
-  normalizedSymbol: string | null
-  validationReason: string | null
-  validationFlowRunId: string | null
-  backfillFlowRunId: string | null
-  result: string | null
-  loading: boolean
-  error: string | null
-  updatedAt: string
 }
 
 export function RelationshipMapFrontierPanel() {
@@ -184,19 +168,7 @@ export function RelationshipMapFrontierPanel() {
     setSubmitting(true)
     setActionError(null)
     const now = new Date().toISOString()
-    setOnboarding((current) => {
-      const next = { ...current }
-      for (const candidate of targets) {
-        const key = candidateKey(candidate)
-        next[key] = {
-          ...(next[key] ?? baseOnboardingRow(candidate, now)),
-          loading: true,
-          error: null,
-          updatedAt: now,
-        }
-      }
-      return next
-    })
+    setOnboarding((current) => seedOnboardingRows(current, targets, { updatedAt: now, status: 'pending_validation', loading: true }))
 
     const results = await Promise.allSettled(targets.map(async (candidate) => {
       const region = candidateRegion(candidate)
@@ -272,32 +244,77 @@ export function RelationshipMapFrontierPanel() {
     if (!confirmed) return
     setBulkSubmitting(true)
     setBulkMessage(null)
+    const now = new Date().toISOString()
+    setOnboarding((current) => seedOnboardingRows(current, selectedCandidates, { updatedAt: now, status: 'pending_backfill', loading: true }))
     // The bulk endpoint takes one region + a ticker list, so group the selection by region.
-    const byRegion = new Map<string, string[]>()
+    const byRegion = new Map<string, FrontierCandidate[]>()
     for (const candidate of selectedCandidates) {
       const region = candidateRegion(candidate)
       const list = byRegion.get(region) ?? []
-      list.push(candidate.symbol)
+      list.push(candidate)
       byRegion.set(region, list)
     }
-    try {
-      let scheduled = 0
-      for (const [region, tickers] of byRegion) {
-        const response = await requestClientJson('/api/tickers/backfill-bulk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tickers, region }),
-        })
-        const record = asRecord(response)
-        scheduled += typeof record?.requested_count === 'number' ? record.requested_count : tickers.length
+    const bulkGroups = Array.from(byRegion.values())
+    const results = await Promise.allSettled(Array.from(byRegion.entries()).map(async ([region, candidatesInRegion]) => {
+      const tickers = candidatesInRegion.map((candidate) => candidate.symbol)
+      const response = await requestClientJson('/api/tickers/backfill-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tickers, region }),
+      })
+      return { candidates: candidatesInRegion, response }
+    }))
+
+    const successfulCandidates: FrontierCandidate[] = []
+    const failedGroups: Array<{ candidates: FrontierCandidate[]; error: string }> = []
+    let scheduled = 0
+    let firstError: string | null = null
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        const record = asRecord(result.value.response)
+        const scheduledCount = typeof record?.requested_count === 'number' ? record.requested_count : result.value.candidates.length
+        scheduled += scheduledCount
+        successfulCandidates.push(...result.value.candidates)
+      } else {
+        const failedGroup = bulkGroups[results.indexOf(result)] ?? []
+        const errorMessage = readErrorMessage(result.reason)
+        firstError = firstError ?? errorMessage
+        failedGroups.push({ candidates: failedGroup, error: errorMessage })
       }
-      setBulkMessage(`Scheduled ${scheduled} ticker(s) for full backfill — running now in the background; they appear in the map on the next daily build.`)
-      setSelectedSymbols(new Set())
-    } catch (bulkError) {
-      setBulkMessage(readErrorMessage(bulkError))
-    } finally {
-      setBulkSubmitting(false)
     }
+
+    setOnboarding((current) => {
+      let next = { ...current }
+      if (successfulCandidates.length > 0) {
+        next = seedOnboardingRows(next, successfulCandidates, {
+          updatedAt: new Date().toISOString(),
+          status: 'pending_backfill',
+          loading: false,
+        })
+      }
+      for (const failedGroup of failedGroups) {
+        next = seedOnboardingRows(next, failedGroup.candidates, {
+          updatedAt: new Date().toISOString(),
+          status: 'pending_backfill',
+          loading: false,
+          error: failedGroup.error,
+        })
+      }
+      return next
+    })
+
+    if (scheduled > 0) {
+      setBulkMessage(`Scheduled ${scheduled} ticker(s) for full backfill — running now in the background; they appear in the map on the next daily build.`)
+      setSelectedSymbols((current) => {
+        const next = new Set(current)
+        for (const candidate of successfulCandidates) next.delete(candidateKey(candidate))
+        return next
+      })
+      void refreshStatuses(successfulCandidates.map((candidate) => baseOnboardingRow(candidate, new Date().toISOString(), 'pending_backfill')))
+    } else if (firstError) {
+      setBulkMessage(firstError)
+    }
+    setBulkSubmitting(false)
   }
 
   async function removeOnboarding(row: OnboardingRow) {
@@ -621,96 +638,6 @@ function FrontierError({ error }: { error: unknown }) {
   )
 }
 
-function candidateRegion(candidate: FrontierCandidate): string {
-  const country = String(candidate.country || '').trim().toLowerCase()
-  return country && country !== 'unknown' ? country : 'global'
-}
-
-function candidateKey(candidate: FrontierCandidate): string {
-  return onboardingKey(candidate.symbol, candidateRegion(candidate), null)
-}
-
-function onboardingKey(symbol: string, region: string, exchange: string | null): string {
-  return `${symbol.trim().toUpperCase()}|${region.trim().toLowerCase() || 'us'}|${exchange?.trim().toUpperCase() || 'default'}`
-}
-
-function baseOnboardingRow(candidate: FrontierCandidate, updatedAt = new Date().toISOString()): OnboardingRow {
-  const region = candidateRegion(candidate)
-  return {
-    key: candidateKey(candidate),
-    symbol: candidate.symbol.trim().toUpperCase(),
-    name: candidate.name,
-    region,
-    exchange: null,
-    status: 'pending_validation',
-    readiness: tickerReadinessBadge({
-      coverageState: 'pending_validation',
-      registryStatus: 'pending_validation',
-    }),
-    registryKey: null,
-    normalizedSymbol: null,
-    validationReason: null,
-    validationFlowRunId: null,
-    backfillFlowRunId: null,
-    result: null,
-    loading: false,
-    error: null,
-    updatedAt,
-  }
-}
-
-function normalizeOnboardingRow(payload: unknown, candidate: FrontierCandidate, resultFallback: string | null): OnboardingRow {
-  const record = asRecord(payload) ?? {}
-  const symbol = readString(record, ['ticker', 'symbol'])?.toUpperCase() ?? candidate.symbol.trim().toUpperCase()
-  const region = readString(record, ['region'])?.toLowerCase() ?? candidateRegion(candidate)
-  const exchange = readString(record, ['exchange'])
-  const status = readString(record, ['status']) ?? 'pending_validation'
-  return {
-    key: onboardingKey(symbol, region, exchange),
-    symbol,
-    name: candidate.name,
-    region,
-    exchange,
-    status,
-    readiness: readinessFromRecord(record, status),
-    registryKey: readString(record, ['registry_key', 'registryKey']),
-    normalizedSymbol: readString(record, ['normalized_symbol', 'normalizedSymbol']),
-    validationReason: readString(record, ['validation_reason', 'validationReason']),
-    validationFlowRunId: readString(record, ['validation_flow_run_id', 'validationFlowRunId']),
-    backfillFlowRunId: readString(record, ['backfill_flow_run_id', 'backfillFlowRunId']),
-    result: readString(record, ['result']) ?? resultFallback,
-    loading: false,
-    error: null,
-    updatedAt: new Date().toISOString(),
-  }
-}
-
-function rowToCandidate(row: OnboardingRow): FrontierCandidate {
-  return {
-    symbol: row.symbol,
-    name: row.name,
-    country: row.region.toUpperCase(),
-    themes: [],
-    etfs: [],
-    adjacency: 0,
-    score: 0,
-    weight: 0,
-    readiness: row.readiness,
-  }
-}
-
-function isRemovableOnboardingStatus(status: string): boolean {
-  return ['pending_validation', 'validating', 'pending_backfill', 'backfilling'].includes(status)
-}
-
-function statusBadgeClass(status: string): string {
-  if (status === 'ready') return 'completed'
-  if (status === 'rejected') return 'failed'
-  if (status === 'validating' || status === 'backfilling') return 'running'
-  if (status === 'pending_validation' || status === 'pending_backfill') return 'queued'
-  return 'muted'
-}
-
 function readErrorMessage(error: unknown): string {
   const record = asRecord(error)
   const detail = asRecord(record?.detail)
@@ -754,21 +681,6 @@ function normalizeCandidate(row: unknown): FrontierCandidate | null {
   }
 }
 
-function readinessFromRecord(record: RowRecord | null | undefined, fallbackStatus?: string | null): TickerReadinessBadge {
-  return tickerReadinessBadge({
-    isTracked: readBoolean(record, ['isTracked', 'is_tracked', 'tracked']),
-    coverageState: readString(record, ['coverageState', 'coverage_state', 'readiness', 'readiness_state']),
-    hasPrices: readBoolean(record, ['hasPrices', 'has_prices', 'pricesReady', 'prices_ready']),
-    hasTechnicals: readBoolean(record, ['hasTechnicals', 'has_technicals', 'technicalsReady', 'technicals_ready']),
-    hasScorecard: readBoolean(record, ['hasScorecard', 'has_scorecard', 'scorecardReady', 'scorecard_ready']),
-    missingInputs: readStringList(record?.missingInputs ?? record?.missing_inputs),
-    registryStatus: readString(record, ['registryStatus', 'registry_status', 'status']) ?? fallbackStatus,
-    validationStatus: readString(record, ['validationStatus', 'validation_status', 'validationResult', 'validation_result']),
-    promotionStatus: readString(record, ['promotionStatus', 'promotion_status']),
-    scorecardReadiness: readString(record, ['scorecardReadiness', 'scorecard_readiness', 'buildStatus', 'build_status']),
-  })
-}
-
 function normalizeTheme(row: unknown): FrontierTheme | null {
   const record = asRecord(row)
   const theme = readString(record, ['theme'])
@@ -802,21 +714,6 @@ function readNumber(record: RowRecord | null | undefined, keys: string[]): numbe
     if (typeof value === 'string' && value.trim()) {
       const parsed = Number(value)
       if (Number.isFinite(parsed)) return parsed
-    }
-  }
-  return null
-}
-
-function readBoolean(record: RowRecord | null | undefined, keys: string[]): boolean | null {
-  if (!record) return null
-  for (const key of keys) {
-    const value = record[key]
-    if (typeof value === 'boolean') return value
-    if (typeof value === 'number') return value !== 0
-    if (typeof value === 'string' && value.trim()) {
-      const normalized = value.trim().toLowerCase()
-      if (['true', '1', 'yes', 'y'].includes(normalized)) return true
-      if (['false', '0', 'no', 'n'].includes(normalized)) return false
     }
   }
   return null
