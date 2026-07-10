@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   baseOnboardingRow,
+  buildOnboardingRequestPayload,
   candidateKey,
+  groupCandidatesForBulkOnboard,
+  isCandidateOnboardable,
   normalizeOnboardingRow,
   seedOnboardingRows,
   statusBadgeClass,
@@ -61,4 +64,89 @@ test('status polling normalization preserves backfilling, ready, and rejected st
   assert.equal(statusBadgeClass(ready.status), 'completed')
   assert.equal(rejected.readiness.label, 'Rejected')
   assert.equal(statusBadgeClass(rejected.status), 'failed')
+})
+
+test('frontier onboarding uses canonical onboard symbol instead of raw holding symbol', () => {
+  const vestas: RelationshipMapOnboardingCandidate = {
+    ...candidate,
+    symbol: 'VWS',
+    sourceSymbol: 'VWS',
+    displaySymbol: 'VWS',
+    name: 'Vestas Wind Systems A/S',
+    country: 'DK',
+    onboardSymbol: 'VWS.CO',
+    onboardRegion: 'eu',
+    onboardExchange: 'XCSE',
+    isOnboardable: true,
+  }
+
+  assert.equal(isCandidateOnboardable(vestas), true)
+  assert.deepEqual(buildOnboardingRequestPayload(vestas), {
+    ticker: 'VWS.CO',
+    region: 'eu',
+    exchange: 'XCSE',
+  })
+
+  const seeded = baseOnboardingRow(vestas, '2026-07-08T10:00:00.000Z')
+  assert.equal(seeded.symbol, 'VWS.CO')
+  assert.equal(seeded.sourceSymbol, 'VWS')
+  assert.equal(candidateKey(vestas), 'VWS.CO|eu|XCSE')
+
+  const refreshed = normalizeOnboardingRow({ status: 'backfilling' }, vestas, null)
+  assert.equal(refreshed.symbol, 'VWS.CO')
+  assert.equal(refreshed.region, 'eu')
+  assert.equal(refreshed.exchange, 'XCSE')
+})
+
+test('non-onboardable frontier candidates do not produce onboarding payloads', () => {
+  const blocked: RelationshipMapOnboardingCandidate = {
+    ...candidate,
+    symbol: 'BAD',
+    onboardSymbol: '',
+    onboardRegion: 'us',
+    isOnboardable: false,
+    notOnboardableReason: 'missing canonical identity',
+  }
+
+  assert.equal(isCandidateOnboardable(blocked), false)
+  assert.equal(buildOnboardingRequestPayload(blocked), null)
+  assert.deepEqual(groupCandidatesForBulkOnboard([blocked]), [])
+})
+
+test('bulk onboarding groups canonical symbols by region and exchange', () => {
+  const groups = groupCandidatesForBulkOnboard([
+    {
+      ...candidate,
+      symbol: '9766',
+      onboardSymbol: '9766.T',
+      onboardRegion: 'apac',
+      onboardExchange: 'XTKS',
+      isOnboardable: true,
+    },
+    {
+      ...candidate,
+      symbol: 'ZEAL',
+      onboardSymbol: 'ZEAL.CO',
+      onboardRegion: 'eu',
+      onboardExchange: 'XCSE',
+      isOnboardable: true,
+    },
+    {
+      ...candidate,
+      symbol: 'U',
+      onboardSymbol: 'U',
+      onboardRegion: 'us',
+      onboardExchange: null,
+      isOnboardable: true,
+    },
+  ])
+
+  assert.deepEqual(
+    groups.map((group) => ({ region: group.region, exchange: group.exchange, tickers: group.tickers })),
+    [
+      { region: 'apac', exchange: 'XTKS', tickers: ['9766.T'] },
+      { region: 'eu', exchange: 'XCSE', tickers: ['ZEAL.CO'] },
+      { region: 'us', exchange: null, tickers: ['U'] },
+    ],
+  )
 })

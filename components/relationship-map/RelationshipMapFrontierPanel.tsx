@@ -5,8 +5,11 @@ import { requestClientJson } from '@/lib/client-json'
 import { asRecord, firstList, type RowRecord } from '@/lib/payload'
 import {
   baseOnboardingRow,
+  buildOnboardingRequestPayload,
   candidateKey,
-  candidateRegion,
+  candidateOnboardSymbol,
+  groupCandidatesForBulkOnboard,
+  isCandidateOnboardable,
   isRemovableOnboardingStatus,
   normalizeOnboardingRow,
   readinessFromRecord,
@@ -133,6 +136,7 @@ export function RelationshipMapFrontierPanel() {
   }, [onboarding, refreshStatuses])
 
   function toggleSelected(candidate: FrontierCandidate, checked: boolean) {
+    if (!isCandidateOnboardable(candidate)) return
     const key = candidateKey(candidate)
     setSelectedSymbols((current) => {
       const next = new Set(current)
@@ -152,6 +156,11 @@ export function RelationshipMapFrontierPanel() {
 
   async function onboardSelected() {
     if (selectedCandidates.length === 0) return
+    const onboardableCandidates = selectedCandidates.filter(isCandidateOnboardable)
+    if (onboardableCandidates.length !== selectedCandidates.length) {
+      setActionError('One or more selected candidates are not onboardable.')
+      return
+    }
     if (selectedCandidates.length > ONBOARD_BATCH_CAP) {
       setActionError(`Select at most ${ONBOARD_BATCH_CAP} candidates per onboarding request.`)
       return
@@ -160,22 +169,30 @@ export function RelationshipMapFrontierPanel() {
       `Onboard ${selectedCandidates.length} candidate${selectedCandidates.length === 1 ? '' : 's'}? They appear in the map on the next daily build.`
     )
     if (!confirmed) return
-    await onboardCandidates(selectedCandidates)
+    await onboardCandidates(onboardableCandidates)
   }
 
   async function onboardCandidates(targets: FrontierCandidate[]) {
-    if (targets.length === 0) return
+    const onboardableTargets = targets.filter(isCandidateOnboardable)
+    if (onboardableTargets.length === 0) {
+      setActionError('No selected candidates are currently onboardable.')
+      return
+    }
+    if (onboardableTargets.length !== targets.length) {
+      setActionError('Skipped one or more candidates that are not onboardable.')
+    }
     setSubmitting(true)
-    setActionError(null)
+    if (onboardableTargets.length === targets.length) setActionError(null)
     const now = new Date().toISOString()
-    setOnboarding((current) => seedOnboardingRows(current, targets, { updatedAt: now, status: 'pending_validation', loading: true }))
+    setOnboarding((current) => seedOnboardingRows(current, onboardableTargets, { updatedAt: now, status: 'pending_validation', loading: true }))
 
-    const results = await Promise.allSettled(targets.map(async (candidate) => {
-      const region = candidateRegion(candidate)
+    const results = await Promise.allSettled(onboardableTargets.map(async (candidate) => {
+      const body = buildOnboardingRequestPayload(candidate)
+      if (!body) throw new Error(candidate.notOnboardableReason ?? 'Candidate is not onboardable.')
       const response = await requestClientJson('/api/tickers/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: candidate.symbol, region }),
+        body: JSON.stringify(body),
       })
       return { candidate, response }
     }))
@@ -187,7 +204,7 @@ export function RelationshipMapFrontierPanel() {
           const { candidate, response } = result.value
           next[candidateKey(candidate)] = normalizeOnboardingRow(response, candidate, null)
         } else {
-          const candidate = targets[results.indexOf(result)]
+          const candidate = onboardableTargets[results.indexOf(result)]
           const key = candidateKey(candidate)
           next[key] = {
             ...(next[key] ?? baseOnboardingRow(candidate)),
@@ -201,7 +218,7 @@ export function RelationshipMapFrontierPanel() {
     })
     setSelectedSymbols((current) => {
       const next = new Set(current)
-      for (const candidate of targets) next.delete(candidateKey(candidate))
+      for (const candidate of onboardableTargets) next.delete(candidateKey(candidate))
       return next
     })
     setSubmitting(false)
@@ -221,6 +238,10 @@ export function RelationshipMapFrontierPanel() {
       symbol,
       name: null,
       country: region.toUpperCase(),
+      onboardSymbol: symbol,
+      onboardRegion: region,
+      onboardExchange: null,
+      isOnboardable: true,
       themes: [],
       etfs: [],
       adjacency: 0,
@@ -238,6 +259,11 @@ export function RelationshipMapFrontierPanel() {
 
   async function onboardSelectedBulk() {
     if (selectedCandidates.length === 0) return
+    const onboardableCandidates = selectedCandidates.filter(isCandidateOnboardable)
+    if (onboardableCandidates.length !== selectedCandidates.length) {
+      setActionError('One or more selected candidates are not onboardable.')
+      return
+    }
     const confirmed = window.confirm(
       `Bulk-onboard ${selectedCandidates.length} selected candidate(s)? They full-backfill now in the background (Prefect handles the concurrency) and appear in the map on the next daily build.`,
     )
@@ -245,24 +271,20 @@ export function RelationshipMapFrontierPanel() {
     setBulkSubmitting(true)
     setBulkMessage(null)
     const now = new Date().toISOString()
-    setOnboarding((current) => seedOnboardingRows(current, selectedCandidates, { updatedAt: now, status: 'pending_backfill', loading: true }))
-    // The bulk endpoint takes one region + a ticker list, so group the selection by region.
-    const byRegion = new Map<string, FrontierCandidate[]>()
-    for (const candidate of selectedCandidates) {
-      const region = candidateRegion(candidate)
-      const list = byRegion.get(region) ?? []
-      list.push(candidate)
-      byRegion.set(region, list)
-    }
-    const bulkGroups = Array.from(byRegion.values())
-    const results = await Promise.allSettled(Array.from(byRegion.entries()).map(async ([region, candidatesInRegion]) => {
-      const tickers = candidatesInRegion.map((candidate) => candidate.symbol)
+    setOnboarding((current) => seedOnboardingRows(current, onboardableCandidates, { updatedAt: now, status: 'pending_backfill', loading: true }))
+    // The bulk endpoint takes one region, one optional exchange, and a ticker list.
+    const bulkGroups = groupCandidatesForBulkOnboard(onboardableCandidates)
+    const results = await Promise.allSettled(bulkGroups.map(async (group) => {
       const response = await requestClientJson('/api/tickers/backfill-bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tickers, region }),
+        body: JSON.stringify({
+          tickers: group.tickers,
+          region: group.region,
+          ...(group.exchange ? { exchange: group.exchange } : {}),
+        }),
       })
-      return { candidates: candidatesInRegion, response }
+      return { candidates: group.candidates, response }
     }))
 
     const successfulCandidates: FrontierCandidate[] = []
@@ -276,10 +298,10 @@ export function RelationshipMapFrontierPanel() {
         scheduled += scheduledCount
         successfulCandidates.push(...result.value.candidates)
       } else {
-        const failedGroup = bulkGroups[results.indexOf(result)] ?? []
+        const failedGroup = bulkGroups[results.indexOf(result)]
         const errorMessage = readErrorMessage(result.reason)
         firstError = firstError ?? errorMessage
-        failedGroups.push({ candidates: failedGroup, error: errorMessage })
+        if (failedGroup) failedGroups.push({ candidates: failedGroup.candidates, error: errorMessage })
       }
     }
 
@@ -422,8 +444,13 @@ export function RelationshipMapFrontierPanel() {
                   const selected = selectedSymbols.has(key)
                   const row = onboarding[key]
                   const readiness = row?.readiness ?? candidate.readiness
+                  const onboardable = isCandidateOnboardable(candidate)
                   const rejected = readiness.label === 'Rejected'
-                  const selectable = !row && !rejected && (selected || selectedSymbols.size < ONBOARD_BATCH_CAP)
+                  const selectable = onboardable && !row && !rejected && (selected || selectedSymbols.size < ONBOARD_BATCH_CAP)
+                  const onboardSymbol = candidateOnboardSymbol(candidate)
+                  const showOnboardSymbol = Boolean(onboardSymbol && onboardSymbol !== candidate.symbol.trim().toUpperCase())
+                  const sourceSymbol = candidate.sourceSymbol?.trim()
+                  const showSourceSymbol = Boolean(sourceSymbol && sourceSymbol.toUpperCase() !== candidate.symbol.trim().toUpperCase())
                   return (
                     <tr key={key}>
                       <td>
@@ -441,6 +468,8 @@ export function RelationshipMapFrontierPanel() {
                           <strong>{candidate.symbol}</strong>
                           {row ? <span className={`badge ${statusBadgeClass(row.status)}`}>{row.loading ? 'updating' : row.status}</span> : null}
                         </div>
+                        {showSourceSymbol ? <div className="small">Source: {sourceSymbol}</div> : null}
+                        {showOnboardSymbol ? <div className="small">Onboards as {onboardSymbol}</div> : null}
                       </td>
                       <td>{candidate.name ?? '-'}</td>
                       <td>{candidate.country}</td>
@@ -455,12 +484,13 @@ export function RelationshipMapFrontierPanel() {
                       <td>
                         <button
                           className="secondary relationship-map-action-button"
-                          disabled={submitting || Boolean(row) || rejected}
+                          disabled={submitting || Boolean(row) || rejected || !onboardable}
                           onClick={() => void onboardCandidates([candidate])}
                           type="button"
                         >
-                          {readiness.label === 'Tracked' ? 'Onboard' : 'Backfill'}
+                          {onboardable ? (readiness.label === 'Tracked' ? 'Onboard' : 'Backfill') : 'Unavailable'}
                         </button>
+                        {!onboardable && candidate.notOnboardableReason ? <div className="small">{candidate.notOnboardableReason}</div> : null}
                       </td>
                     </tr>
                   )
@@ -582,7 +612,11 @@ export function RelationshipMapFrontierPanel() {
               ) : null}
               {onboardingRows.map((row) => (
                 <tr key={row.key}>
-                  <td><strong>{row.symbol}</strong>{row.name ? <div className="small">{row.name}</div> : null}</td>
+                  <td>
+                    <strong>{row.symbol}</strong>
+                    {row.name ? <div className="small">{row.name}</div> : null}
+                    {row.sourceSymbol && row.sourceSymbol.toUpperCase() !== row.symbol.toUpperCase() ? <div className="small">Source: {row.sourceSymbol}</div> : null}
+                  </td>
                   <td>{row.region.toUpperCase()}</td>
                   <td>
                     <span className={`badge ${row.loading ? statusBadgeClass(row.status) : row.readiness.className}`}>
@@ -670,8 +704,17 @@ function normalizeCandidate(row: unknown): FrontierCandidate | null {
   if (!record || !symbol) return null
   return {
     symbol,
+    sourceSymbol: readString(record, ['sourceSymbol', 'source_symbol']),
+    displaySymbol: readString(record, ['displaySymbol', 'display_symbol']),
     name: readString(record, ['name']),
-    country: readString(record, ['country']) ?? 'UNKNOWN',
+    country: readString(record, ['sourceCountry', 'source_country', 'country']) ?? 'UNKNOWN',
+    providerSymbol: readString(record, ['providerSymbol', 'provider_symbol']),
+    onboardSymbol: readString(record, ['onboardSymbol', 'onboard_symbol']),
+    onboardRegion: readString(record, ['onboardRegion', 'onboard_region']),
+    onboardExchange: readString(record, ['onboardExchange', 'onboard_exchange']),
+    isOnboardable: readBoolean(record, ['isOnboardable', 'is_onboardable']),
+    notOnboardableReason: readString(record, ['notOnboardableReason', 'not_onboardable_reason']),
+    resolutionSource: readString(record, ['resolutionSource', 'resolution_source']),
     themes: readStringList(record.themes),
     etfs: readStringList(record.etfs),
     adjacency: readNumber(record, ['adjacency']) ?? 0,
@@ -714,6 +757,21 @@ function readNumber(record: RowRecord | null | undefined, keys: string[]): numbe
     if (typeof value === 'string' && value.trim()) {
       const parsed = Number(value)
       if (Number.isFinite(parsed)) return parsed
+    }
+  }
+  return null
+}
+
+function readBoolean(record: RowRecord | null | undefined, keys: string[]): boolean | null {
+  if (!record) return null
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'number') return value !== 0
+    if (typeof value === 'string' && value.trim()) {
+      const normalized = value.trim().toLowerCase()
+      if (['true', '1', 'yes', 'y'].includes(normalized)) return true
+      if (['false', '0', 'no', 'n'].includes(normalized)) return false
     }
   }
   return null

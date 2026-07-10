@@ -3,8 +3,17 @@ import { tickerReadinessBadge, type TickerReadinessBadge } from './ticker-readin
 
 export type RelationshipMapOnboardingCandidate = {
   symbol: string
+  sourceSymbol?: string | null
+  displaySymbol?: string | null
   name: string | null
   country: string
+  providerSymbol?: string | null
+  onboardSymbol?: string | null
+  onboardRegion?: string | null
+  onboardExchange?: string | null
+  isOnboardable?: boolean | null
+  notOnboardableReason?: string | null
+  resolutionSource?: string | null
   themes: string[]
   etfs: string[]
   adjacency: number
@@ -16,6 +25,8 @@ export type RelationshipMapOnboardingCandidate = {
 export type OnboardingRow = {
   key: string
   symbol: string
+  sourceSymbol: string | null
+  displaySymbol: string | null
   name: string | null
   region: string
   exchange: string | null
@@ -40,11 +51,74 @@ export function candidateRegion(candidate: RelationshipMapOnboardingCandidate): 
 }
 
 export function candidateKey(candidate: RelationshipMapOnboardingCandidate): string {
-  return onboardingKey(candidate.symbol, candidateRegion(candidate), null)
+  return onboardingKey(candidateOnboardSymbol(candidate) || candidate.symbol, candidateOnboardRegion(candidate), candidateOnboardExchange(candidate))
 }
 
 export function onboardingKey(symbol: string, region: string, exchange: string | null): string {
   return `${symbol.trim().toUpperCase()}|${region.trim().toLowerCase() || 'us'}|${exchange?.trim().toUpperCase() || 'default'}`
+}
+
+export function candidateOnboardSymbol(candidate: RelationshipMapOnboardingCandidate): string {
+  const symbol = String(candidate.onboardSymbol ?? candidate.symbol ?? '').trim().toUpperCase()
+  return symbol
+}
+
+export function candidateOnboardRegion(candidate: RelationshipMapOnboardingCandidate): string {
+  return String(candidate.onboardRegion ?? candidateRegion(candidate)).trim().toLowerCase() || 'us'
+}
+
+export function candidateOnboardExchange(candidate: RelationshipMapOnboardingCandidate): string | null {
+  const exchange = String(candidate.onboardExchange ?? '').trim().toUpperCase()
+  return exchange || null
+}
+
+export function isCandidateOnboardable(candidate: RelationshipMapOnboardingCandidate): boolean {
+  return candidate.isOnboardable === true && candidateOnboardSymbol(candidate).length > 0
+}
+
+export type OnboardingRequestPayload = {
+  ticker: string
+  region: string
+  exchange?: string
+}
+
+export function buildOnboardingRequestPayload(candidate: RelationshipMapOnboardingCandidate): OnboardingRequestPayload | null {
+  if (!isCandidateOnboardable(candidate)) return null
+  const exchange = candidateOnboardExchange(candidate)
+  return {
+    ticker: candidateOnboardSymbol(candidate),
+    region: candidateOnboardRegion(candidate),
+    ...(exchange ? { exchange } : {}),
+  }
+}
+
+export type BulkOnboardingGroup = {
+  key: string
+  region: string
+  exchange: string | null
+  tickers: string[]
+  candidates: RelationshipMapOnboardingCandidate[]
+}
+
+export function groupCandidatesForBulkOnboard(candidates: RelationshipMapOnboardingCandidate[]): BulkOnboardingGroup[] {
+  const groups = new Map<string, BulkOnboardingGroup>()
+  for (const candidate of candidates) {
+    const request = buildOnboardingRequestPayload(candidate)
+    if (!request) continue
+    const exchange = request.exchange ?? null
+    const key = onboardingKey('__bulk__', request.region, exchange)
+    const group = groups.get(key) ?? {
+      key,
+      region: request.region,
+      exchange,
+      tickers: [],
+      candidates: [],
+    }
+    group.tickers.push(request.ticker)
+    group.candidates.push(candidate)
+    groups.set(key, group)
+  }
+  return Array.from(groups.values())
 }
 
 export function baseOnboardingRow(
@@ -52,13 +126,17 @@ export function baseOnboardingRow(
   updatedAt = new Date().toISOString(),
   status: OnboardingSeedStatus = 'pending_validation',
 ): OnboardingRow {
-  const region = candidateRegion(candidate)
+  const symbol = candidateOnboardSymbol(candidate) || candidate.symbol.trim().toUpperCase()
+  const region = candidateOnboardRegion(candidate)
+  const exchange = candidateOnboardExchange(candidate)
   return {
     key: candidateKey(candidate),
-    symbol: candidate.symbol.trim().toUpperCase(),
+    symbol,
+    sourceSymbol: readCleanString(candidate.sourceSymbol) ?? null,
+    displaySymbol: readCleanString(candidate.displaySymbol) ?? null,
     name: candidate.name,
     region,
-    exchange: null,
+    exchange,
     status,
     readiness: tickerReadinessBadge({
       coverageState: status,
@@ -105,13 +183,15 @@ export function seedOnboardingRows(
 
 export function normalizeOnboardingRow(payload: unknown, candidate: RelationshipMapOnboardingCandidate, resultFallback: string | null): OnboardingRow {
   const record = asRecord(payload) ?? {}
-  const symbol = readString(record, ['ticker', 'symbol'])?.toUpperCase() ?? candidate.symbol.trim().toUpperCase()
-  const region = readString(record, ['region'])?.toLowerCase() ?? candidateRegion(candidate)
-  const exchange = readString(record, ['exchange'])
+  const symbol = readString(record, ['ticker', 'symbol'])?.toUpperCase() || candidateOnboardSymbol(candidate) || candidate.symbol.trim().toUpperCase()
+  const region = readString(record, ['region'])?.toLowerCase() ?? candidateOnboardRegion(candidate)
+  const exchange = readString(record, ['exchange']) ?? candidateOnboardExchange(candidate)
   const status = readString(record, ['status']) ?? 'pending_validation'
   return {
     key: onboardingKey(symbol, region, exchange),
     symbol,
+    sourceSymbol: readCleanString(candidate.sourceSymbol) ?? null,
+    displaySymbol: readCleanString(candidate.displaySymbol) ?? null,
     name: candidate.name,
     region,
     exchange,
@@ -132,8 +212,14 @@ export function normalizeOnboardingRow(payload: unknown, candidate: Relationship
 export function rowToCandidate(row: OnboardingRow): RelationshipMapOnboardingCandidate {
   return {
     symbol: row.symbol,
+    sourceSymbol: row.sourceSymbol,
+    displaySymbol: row.displaySymbol,
     name: row.name,
     country: row.region.toUpperCase(),
+    onboardSymbol: row.symbol,
+    onboardRegion: row.region,
+    onboardExchange: row.exchange,
+    isOnboardable: true,
     themes: [],
     etfs: [],
     adjacency: 0,
@@ -177,6 +263,12 @@ function readString(record: RowRecord | null | undefined, keys: string[]): strin
     if (typeof value === 'string' && value.trim()) return value
     if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   }
+  return null
+}
+
+function readCleanString(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   return null
 }
 
