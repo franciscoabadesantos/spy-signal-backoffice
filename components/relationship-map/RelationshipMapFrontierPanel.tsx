@@ -479,15 +479,15 @@ export function RelationshipMapFrontierPanel() {
                         {showSourceSymbol ? <div className="small">Source: {sourceSymbol}</div> : null}
                         {showOnboardSymbol ? <div className="small">Onboards as {onboardSymbol}</div> : null}
                       </td>
-                      <td>{candidate.name ?? '-'}</td>
+                      <td><span className="relationship-map-cell-clamp">{candidate.name ?? '-'}</span></td>
                       <td>{candidate.country}</td>
-                      <td>{candidate.themes.join(', ') || '-'}</td>
-                      <td>{candidate.etfs.join(', ') || '-'}</td>
+                      <td><span className="relationship-map-cell-clamp">{candidate.themes.join(', ') || '-'}</span></td>
+                      <td><span className="relationship-map-cell-clamp">{candidate.etfs.join(', ') || '-'}</span></td>
                       <td>{formatScore(candidate.adjacency)}</td>
                       <td>{formatRatio(candidate.weight)}</td>
                       <td>
                         <span className={`badge ${readiness.className}`}>{readiness.label}</span>
-                        {readiness.diagnostic ? <div className="small">{readiness.diagnostic}</div> : null}
+                        {readiness.diagnostic ? <div className="small relationship-map-cell-clamp">{readiness.diagnostic}</div> : null}
                       </td>
                       <td>
                         <button
@@ -508,7 +508,7 @@ export function RelationshipMapFrontierPanel() {
           </div>
         </div>
 
-        <div>
+        <div className="relationship-map-untapped-themes">
           <div>
             <h3>Untapped themes</h3>
             <p className="small">Theme catalogs with many onboardable holdings and low tracked coverage.</p>
