@@ -517,8 +517,8 @@ button:disabled {
 }
 
 .registry-table.relationship-map-frontier-candidates-table {
-  width: 880px;
-  min-width: 880px;
+  width: 1040px;
+  min-width: 1040px;
   table-layout: fixed;
 }
 
@@ -558,7 +558,7 @@ button:disabled {
 
 .relationship-map-frontier-candidates-table th:nth-child(9),
 .relationship-map-frontier-candidates-table td:nth-child(9) {
-  width: 94px;
+  width: 210px;
 }
 
 .relationship-map-frontier-candidates-table th:nth-child(10),
@@ -600,17 +600,21 @@ button:disabled {
 }
 
 .relationship-map-frontier-candidates-table td:nth-child(9) .badge {
-  max-width: 84px;
+  max-width: 100%;
   padding: 2px 7px;
   font-size: 11px;
   line-height: 1.1;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .relationship-map-frontier-candidates-table td:nth-child(9) .small {
   margin-top: 3px;
   font-size: 11px;
   line-height: 1.15;
+  max-height: 1.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .relationship-map-frontier-candidates-table .relationship-map-action-button {
