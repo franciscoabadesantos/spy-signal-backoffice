@@ -67,13 +67,17 @@ export function candidateOnboardRegion(candidate: RelationshipMapOnboardingCandi
   return String(candidate.onboardRegion ?? candidateRegion(candidate)).trim().toLowerCase() || 'us'
 }
 
+function explicitCandidateOnboardRegion(candidate: RelationshipMapOnboardingCandidate): string {
+  return String(candidate.onboardRegion ?? '').trim().toLowerCase()
+}
+
 export function candidateOnboardExchange(candidate: RelationshipMapOnboardingCandidate): string | null {
   const exchange = String(candidate.onboardExchange ?? '').trim().toUpperCase()
   return exchange || null
 }
 
 export function isCandidateOnboardable(candidate: RelationshipMapOnboardingCandidate): boolean {
-  return candidate.isOnboardable === true && candidateOnboardSymbol(candidate).length > 0
+  return candidate.isOnboardable === true && candidateOnboardSymbol(candidate).length > 0 && explicitCandidateOnboardRegion(candidate).length > 0
 }
 
 export type OnboardingRequestPayload = {
@@ -87,8 +91,70 @@ export function buildOnboardingRequestPayload(candidate: RelationshipMapOnboardi
   const exchange = candidateOnboardExchange(candidate)
   return {
     ticker: candidateOnboardSymbol(candidate),
-    region: candidateOnboardRegion(candidate),
+    region: explicitCandidateOnboardRegion(candidate),
     ...(exchange ? { exchange } : {}),
+  }
+}
+
+export type ManualListingInference = {
+  symbol: string
+  hasExchangeSuffix: boolean
+  providerQualified: boolean
+  region: string | null
+  exchange: string | null
+}
+
+const PROVIDER_SUFFIX_LISTINGS: Record<string, { region: string; exchange: string }> = {
+  AS: { region: 'eu', exchange: 'AMS' },
+  BR: { region: 'eu', exchange: 'BRU' },
+  CO: { region: 'eu', exchange: 'CPH' },
+  DE: { region: 'eu', exchange: 'XETR' },
+  HE: { region: 'eu', exchange: 'HEL' },
+  L: { region: 'eu', exchange: 'LSE' },
+  MC: { region: 'eu', exchange: 'MAD' },
+  MI: { region: 'eu', exchange: 'MIL' },
+  OL: { region: 'eu', exchange: 'OSL' },
+  PA: { region: 'eu', exchange: 'PAR' },
+  ST: { region: 'eu', exchange: 'STO' },
+  SW: { region: 'eu', exchange: 'SIX' },
+  T: { region: 'apac', exchange: 'TSE' },
+  HK: { region: 'apac', exchange: 'HKG' },
+}
+
+export function inferManualListing(symbol: string): ManualListingInference {
+  const normalized = symbol.trim().toUpperCase()
+  const suffix = normalized.match(/\.([A-Z0-9]+)$/)?.[1]
+  const listing = suffix ? PROVIDER_SUFFIX_LISTINGS[suffix] : undefined
+  return {
+    symbol: normalized,
+    hasExchangeSuffix: Boolean(suffix),
+    providerQualified: Boolean(suffix && listing),
+    region: listing?.region ?? null,
+    exchange: listing?.exchange ?? null,
+  }
+}
+
+export function manualCandidateForSymbol(symbol: string, bareSymbolRegion: string | null): RelationshipMapOnboardingCandidate {
+  const inference = inferManualListing(symbol)
+  const region = inference.region ?? (inference.hasExchangeSuffix ? null : bareSymbolRegion?.trim().toLowerCase() ?? null)
+  return {
+    symbol: inference.symbol,
+    name: null,
+    country: region?.toUpperCase() ?? 'UNKNOWN',
+    onboardSymbol: inference.symbol,
+    onboardRegion: region,
+    onboardExchange: inference.exchange,
+    isOnboardable: Boolean(region),
+    notOnboardableReason: region ? null : inference.hasExchangeSuffix ? 'Exchange suffix is not recognized.' : 'Choose a market/listing for symbols without an exchange suffix.',
+    themes: [],
+    etfs: [],
+    adjacency: 0,
+    score: 0,
+    weight: 0,
+    readiness: tickerReadinessBadge({
+      coverageState: 'not_tracked',
+      registryStatus: 'not_tracked',
+    }),
   }
 }
 

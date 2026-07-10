@@ -5,7 +5,9 @@ import {
   buildOnboardingRequestPayload,
   candidateKey,
   groupCandidatesForBulkOnboard,
+  inferManualListing,
   isCandidateOnboardable,
+  manualCandidateForSymbol,
   normalizeOnboardingRow,
   seedOnboardingRows,
   statusBadgeClass,
@@ -149,4 +151,57 @@ test('bulk onboarding groups canonical symbols by region and exchange', () => {
       { region: 'us', exchange: null, tickers: ['U'] },
     ],
   )
+})
+
+test('manual provider-qualified symbols infer listing region and exchange', () => {
+  const zeal = manualCandidateForSymbol('ZEAL.CO', null)
+  const tokyo = manualCandidateForSymbol('9766.T', null)
+
+  assert.deepEqual(inferManualListing('ZEAL.CO'), {
+    symbol: 'ZEAL.CO',
+    hasExchangeSuffix: true,
+    providerQualified: true,
+    region: 'eu',
+    exchange: 'CPH',
+  })
+  assert.deepEqual(buildOnboardingRequestPayload(zeal), {
+    ticker: 'ZEAL.CO',
+    region: 'eu',
+    exchange: 'CPH',
+  })
+  assert.deepEqual(buildOnboardingRequestPayload(tokyo), {
+    ticker: '9766.T',
+    region: 'apac',
+    exchange: 'TSE',
+  })
+})
+
+test('manual bare symbols are blocked until a listing region is explicitly selected', () => {
+  const unresolved = manualCandidateForSymbol('VWS', null)
+  const userSelectedUs = manualCandidateForSymbol('MBX', 'us')
+
+  assert.equal(isCandidateOnboardable(unresolved), false)
+  assert.equal(buildOnboardingRequestPayload(unresolved), null)
+  assert.equal(unresolved.notOnboardableReason, 'Choose a market/listing for symbols without an exchange suffix.')
+
+  assert.equal(isCandidateOnboardable(userSelectedUs), true)
+  assert.deepEqual(buildOnboardingRequestPayload(userSelectedUs), {
+    ticker: 'MBX',
+    region: 'us',
+  })
+})
+
+test('manual unknown exchange suffixes are not routed as selected bare listings', () => {
+  const unresolved = manualCandidateForSymbol('ABC.X', 'us')
+
+  assert.deepEqual(inferManualListing('ABC.X'), {
+    symbol: 'ABC.X',
+    hasExchangeSuffix: true,
+    providerQualified: false,
+    region: null,
+    exchange: null,
+  })
+  assert.equal(isCandidateOnboardable(unresolved), false)
+  assert.equal(buildOnboardingRequestPayload(unresolved), null)
+  assert.equal(unresolved.notOnboardableReason, 'Exchange suffix is not recognized.')
 })

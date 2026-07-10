@@ -9,8 +9,10 @@ import {
   candidateKey,
   candidateOnboardSymbol,
   groupCandidatesForBulkOnboard,
+  inferManualListing,
   isCandidateOnboardable,
   isRemovableOnboardingStatus,
+  manualCandidateForSymbol,
   normalizeOnboardingRow,
   readinessFromRecord,
   rowToCandidate,
@@ -19,7 +21,6 @@ import {
   type OnboardingRow,
   type RelationshipMapOnboardingCandidate,
 } from '@/lib/relationship-map-onboarding'
-import { tickerReadinessBadge } from '@/lib/ticker-readiness'
 
 const ONBOARD_BATCH_CAP = 25
 
@@ -56,7 +57,7 @@ export function RelationshipMapFrontierPanel() {
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [adHocSymbols, setAdHocSymbols] = useState('')
-  const [adHocRegion, setAdHocRegion] = useState('us')
+  const [adHocListingRegion, setAdHocListingRegion] = useState('')
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [bulkMessage, setBulkMessage] = useState<string | null>(null)
 
@@ -96,12 +97,29 @@ export function RelationshipMapFrontierPanel() {
     [onboarding]
   )
   const unavailable = Boolean(error && !loading)
+  const adHocParsedSymbols = useMemo(() => parseSymbolInput(adHocSymbols), [adHocSymbols])
+  const adHocBareSymbols = useMemo(
+    () => adHocParsedSymbols.filter((symbol) => {
+      const listing = inferManualListing(symbol)
+      return !listing.hasExchangeSuffix
+    }),
+    [adHocParsedSymbols],
+  )
+  const adHocQualifiedListings = useMemo(
+    () => adHocParsedSymbols.map(inferManualListing).filter((listing) => listing.providerQualified),
+    [adHocParsedSymbols],
+  )
+  const adHocUnresolvedQualifiedSymbols = useMemo(
+    () => adHocParsedSymbols.map(inferManualListing).filter((listing) => listing.hasExchangeSuffix && !listing.providerQualified).map((listing) => listing.symbol),
+    [adHocParsedSymbols],
+  )
+  const adHocNeedsListingRegion = adHocBareSymbols.length > 0
   const adHocKnownCandidates = useMemo(() => {
     const typed = new Set(
-      adHocSymbols.split(/[\s,]+/).map((value) => value.trim().toUpperCase()).filter(Boolean),
+      adHocParsedSymbols,
     )
     return candidates.filter((candidate) => typed.has(candidate.symbol.toUpperCase())).map((c) => c.symbol)
-  }, [adHocSymbols, candidates])
+  }, [adHocParsedSymbols, candidates])
 
   const refreshStatuses = useCallback(async (rows?: OnboardingRow[]) => {
     const sourceRows = rows ?? Object.values(onboarding)
@@ -225,35 +243,25 @@ export function RelationshipMapFrontierPanel() {
   }
 
   async function onboardAdHoc() {
-    const symbols = Array.from(
-      new Set(adHocSymbols.split(/[\s,]+/).map((value) => value.trim().toUpperCase()).filter(Boolean)),
-    )
+    const symbols = adHocParsedSymbols
     if (symbols.length === 0) return
     if (symbols.length > ONBOARD_BATCH_CAP) {
       setActionError(`Enter at most ${ONBOARD_BATCH_CAP} symbols for a direct backfill.`)
       return
     }
-    const region = adHocRegion.trim().toLowerCase() || 'us'
-    const synthetic: FrontierCandidate[] = symbols.map((symbol) => ({
-      symbol,
-      name: null,
-      country: region.toUpperCase(),
-      onboardSymbol: symbol,
-      onboardRegion: region,
-      onboardExchange: null,
-      isOnboardable: true,
-      themes: [],
-      etfs: [],
-      adjacency: 0,
-      score: 0,
-      weight: 0,
-      readiness: tickerReadinessBadge({
-        coverageState: 'not_tracked',
-        registryStatus: 'not_tracked',
-      }),
-    }))
+    const selectedListingRegion = adHocListingRegion.trim().toLowerCase()
+    if (adHocBareSymbols.length > 0 && !selectedListingRegion) {
+      setActionError('Choose a market/listing before submitting symbols without an exchange suffix.')
+      return
+    }
+    if (adHocUnresolvedQualifiedSymbols.length > 0) {
+      setActionError(`Unrecognized exchange suffix for ${adHocUnresolvedQualifiedSymbols.join(', ')}.`)
+      return
+    }
+    const synthetic: FrontierCandidate[] = symbols.map((symbol) => manualCandidateForSymbol(symbol, selectedListingRegion || null))
     setActionError(null)
     setAdHocSymbols('')
+    setAdHocListingRegion('')
     await onboardCandidates(synthetic)
   }
 
@@ -550,30 +558,50 @@ export function RelationshipMapFrontierPanel() {
           Type symbols (need not be on the list) to onboard + full-backfill now — prices, fundamentals, earnings,
           technicals. Runs in the background; appears in the map on the next daily build.
         </p>
+        <p className="small">Market/listing is needed only for ambiguous symbols without an exchange suffix.</p>
         <div className="relationship-map-frontier-toolbar">
           <input
             aria-label="Symbols to backfill"
             className="relationship-map-adhoc-input"
             value={adHocSymbols}
             onChange={(event) => setAdHocSymbols(event.target.value)}
-            placeholder="e.g. PLTR, SNOW, DDOG"
+            placeholder="e.g. ZEAL.CO, 9766.T, U"
             type="text"
           />
-          <select aria-label="Region" value={adHocRegion} onChange={(event) => setAdHocRegion(event.target.value)}>
-            <option value="us">US</option>
-            <option value="eu">EU</option>
-            <option value="apac">APAC</option>
-            <option value="global">Global</option>
+          <select
+            aria-label="Market/listing"
+            disabled={adHocParsedSymbols.length > 0 && !adHocNeedsListingRegion}
+            value={adHocListingRegion}
+            onChange={(event) => setAdHocListingRegion(event.target.value)}
+          >
+            <option value="">Market/listing</option>
+            <option value="us">US listing</option>
+            <option value="eu">EU listing</option>
+            <option value="apac">APAC listing</option>
+            <option value="global">Global listing</option>
           </select>
           <button
             className="primary relationship-map-action-button"
             type="button"
             onClick={() => void onboardAdHoc()}
-            disabled={submitting || !adHocSymbols.trim()}
+            disabled={submitting || adHocParsedSymbols.length === 0 || adHocUnresolvedQualifiedSymbols.length > 0 || (adHocNeedsListingRegion && !adHocListingRegion)}
           >
             Full backfill
           </button>
         </div>
+        {adHocUnresolvedQualifiedSymbols.length > 0 ? (
+          <div className="small">Unrecognized exchange suffix: {adHocUnresolvedQualifiedSymbols.join(', ')}</div>
+        ) : null}
+        {adHocQualifiedListings.length > 0 ? (
+          <div className="small">
+            Inferred from suffix: {adHocQualifiedListings.map((listing) => `${listing.symbol} -> ${listing.region?.toUpperCase()}${listing.exchange ? `/${listing.exchange}` : ''}`).join(', ')}
+          </div>
+        ) : null}
+        {adHocBareSymbols.length > 0 && adHocListingRegion ? (
+          <div className="small">
+            User-selected listing assumption for bare symbol{adHocBareSymbols.length === 1 ? '' : 's'}: {adHocBareSymbols.join(', ')} as {adHocListingRegion.toUpperCase()}
+          </div>
+        ) : null}
         {adHocKnownCandidates.length > 0 ? (
           <div className="small">
             {adHocKnownCandidates.join(', ')} already on the adjacent-candidates list above — you can select there instead.
@@ -780,6 +808,12 @@ function readBoolean(record: RowRecord | null | undefined, keys: string[]): bool
 function readStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.map((item) => String(item).trim()).filter(Boolean)
+}
+
+function parseSymbolInput(value: string): string[] {
+  return Array.from(
+    new Set(value.split(/[\s,]+/).map((symbol) => symbol.trim().toUpperCase()).filter(Boolean)),
+  )
 }
 
 function summaryValue(value: number | undefined, loading: boolean, unavailable: boolean): string {
