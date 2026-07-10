@@ -5,10 +5,9 @@ import {
   buildOnboardingRequestPayload,
   candidateKey,
   groupCandidatesForBulkOnboard,
-  inferManualListing,
   isCandidateOnboardable,
-  manualCandidateForSymbol,
   normalizeOnboardingRow,
+  normalizeOnboardingPreview,
   seedOnboardingRows,
   statusBadgeClass,
   type RelationshipMapOnboardingCandidate,
@@ -153,55 +152,78 @@ test('bulk onboarding groups canonical symbols by region and exchange', () => {
   )
 })
 
-test('manual provider-qualified symbols infer listing region and exchange', () => {
-  const zeal = manualCandidateForSymbol('ZEAL.CO', null)
-  const tokyo = manualCandidateForSymbol('9766.T', null)
+test('manual onboarding preview normalizes VWS to canonical VWS.CO and blocks duplicate submit when tracked', () => {
+  const preview = normalizeOnboardingPreview({
+    q: 'VWS',
+    candidates: [{
+      symbol: 'VWS',
+      source_symbol: 'VWS',
+      display_symbol: 'VWS',
+      name: 'Vestas Wind Systems A/S',
+      onboard_symbol: 'VWS.CO',
+      onboard_region: 'eu',
+      onboard_exchange: 'CPH',
+      home_country: 'DK',
+      is_onboardable: true,
+      already_tracked: true,
+      readiness_state: 'tracked',
+    }],
+  })
+  const [vestas] = preview.candidates
 
-  assert.deepEqual(inferManualListing('ZEAL.CO'), {
-    symbol: 'ZEAL.CO',
-    hasExchangeSuffix: true,
-    providerQualified: true,
-    region: 'eu',
-    exchange: 'CPH',
+  assert.equal(vestas.symbol, 'VWS')
+  assert.equal(vestas.onboardSymbol, 'VWS.CO')
+  assert.equal(vestas.onboardRegion, 'eu')
+  assert.equal(vestas.onboardExchange, 'CPH')
+  assert.equal(vestas.homeCountry, 'DK')
+  assert.equal(vestas.alreadyTracked, true)
+  assert.equal(isCandidateOnboardable(vestas), false)
+  assert.equal(buildOnboardingRequestPayload(vestas), null)
+})
+
+test('manual onboarding preview submits only backend canonical candidate identity', () => {
+  const preview = normalizeOnboardingPreview({
+    q: '9766.T',
+    candidates: [{
+      symbol: '9766.T',
+      name: 'Konami Group Corp',
+      onboard_symbol: '9766.T',
+      onboard_region: 'apac',
+      onboard_exchange: 'TSE',
+      home_country: 'JP',
+      is_onboardable: true,
+      already_tracked: false,
+      readiness_state: 'not_tracked',
+    }, {
+      symbol: 'MBX',
+      name: 'MBX Biosciences Inc',
+      onboard_symbol: 'MBX',
+      onboard_region: 'us',
+      onboard_exchange: null,
+      home_country: 'US',
+      is_onboardable: true,
+      already_tracked: false,
+    }],
   })
-  assert.deepEqual(buildOnboardingRequestPayload(zeal), {
-    ticker: 'ZEAL.CO',
-    region: 'eu',
-    exchange: 'CPH',
-  })
-  assert.deepEqual(buildOnboardingRequestPayload(tokyo), {
+
+  assert.deepEqual(buildOnboardingRequestPayload(preview.candidates[0]), {
     ticker: '9766.T',
     region: 'apac',
     exchange: 'TSE',
   })
-})
-
-test('manual bare symbols are blocked until a listing region is explicitly selected', () => {
-  const unresolved = manualCandidateForSymbol('VWS', null)
-  const userSelectedUs = manualCandidateForSymbol('MBX', 'us')
-
-  assert.equal(isCandidateOnboardable(unresolved), false)
-  assert.equal(buildOnboardingRequestPayload(unresolved), null)
-  assert.equal(unresolved.notOnboardableReason, 'Choose a market/listing for symbols without an exchange suffix.')
-
-  assert.equal(isCandidateOnboardable(userSelectedUs), true)
-  assert.deepEqual(buildOnboardingRequestPayload(userSelectedUs), {
+  assert.deepEqual(buildOnboardingRequestPayload(preview.candidates[1]), {
     ticker: 'MBX',
     region: 'us',
   })
 })
 
-test('manual unknown exchange suffixes are not routed as selected bare listings', () => {
-  const unresolved = manualCandidateForSymbol('ABC.X', 'us')
-
-  assert.deepEqual(inferManualListing('ABC.X'), {
-    symbol: 'ABC.X',
-    hasExchangeSuffix: true,
-    providerQualified: false,
-    region: null,
-    exchange: null,
+test('manual onboarding preview no-match cannot produce a request payload', () => {
+  const preview = normalizeOnboardingPreview({
+    q: 'NO_SUCH_TICKER_123',
+    candidates: [],
+    reason: 'no_canonical_identity_match',
   })
-  assert.equal(isCandidateOnboardable(unresolved), false)
-  assert.equal(buildOnboardingRequestPayload(unresolved), null)
-  assert.equal(unresolved.notOnboardableReason, 'Exchange suffix is not recognized.')
+
+  assert.equal(preview.candidates.length, 0)
+  assert.equal(preview.reason, 'no_canonical_identity_match')
 })

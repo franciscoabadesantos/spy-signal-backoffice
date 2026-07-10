@@ -14,6 +14,9 @@ export type RelationshipMapOnboardingCandidate = {
   isOnboardable?: boolean | null
   notOnboardableReason?: string | null
   resolutionSource?: string | null
+  alreadyTracked?: boolean | null
+  readinessState?: string | null
+  homeCountry?: string | null
   themes: string[]
   etfs: string[]
   adjacency: number
@@ -77,7 +80,7 @@ export function candidateOnboardExchange(candidate: RelationshipMapOnboardingCan
 }
 
 export function isCandidateOnboardable(candidate: RelationshipMapOnboardingCandidate): boolean {
-  return candidate.isOnboardable === true && candidateOnboardSymbol(candidate).length > 0 && explicitCandidateOnboardRegion(candidate).length > 0
+  return candidate.alreadyTracked !== true && candidate.isOnboardable === true && candidateOnboardSymbol(candidate).length > 0 && explicitCandidateOnboardRegion(candidate).length > 0
 }
 
 export type OnboardingRequestPayload = {
@@ -96,65 +99,19 @@ export function buildOnboardingRequestPayload(candidate: RelationshipMapOnboardi
   }
 }
 
-export type ManualListingInference = {
-  symbol: string
-  hasExchangeSuffix: boolean
-  providerQualified: boolean
-  region: string | null
-  exchange: string | null
+export type OnboardingPreviewPayload = {
+  query: string | null
+  candidates: RelationshipMapOnboardingCandidate[]
+  reason: string | null
 }
 
-const PROVIDER_SUFFIX_LISTINGS: Record<string, { region: string; exchange: string }> = {
-  AS: { region: 'eu', exchange: 'AMS' },
-  BR: { region: 'eu', exchange: 'BRU' },
-  CO: { region: 'eu', exchange: 'CPH' },
-  DE: { region: 'eu', exchange: 'XETR' },
-  HE: { region: 'eu', exchange: 'HEL' },
-  L: { region: 'eu', exchange: 'LSE' },
-  MC: { region: 'eu', exchange: 'MAD' },
-  MI: { region: 'eu', exchange: 'MIL' },
-  OL: { region: 'eu', exchange: 'OSL' },
-  PA: { region: 'eu', exchange: 'PAR' },
-  ST: { region: 'eu', exchange: 'STO' },
-  SW: { region: 'eu', exchange: 'SIX' },
-  T: { region: 'apac', exchange: 'TSE' },
-  HK: { region: 'apac', exchange: 'HKG' },
-}
-
-export function inferManualListing(symbol: string): ManualListingInference {
-  const normalized = symbol.trim().toUpperCase()
-  const suffix = normalized.match(/\.([A-Z0-9]+)$/)?.[1]
-  const listing = suffix ? PROVIDER_SUFFIX_LISTINGS[suffix] : undefined
+export function normalizeOnboardingPreview(payload: unknown): OnboardingPreviewPayload {
+  const record = asRecord(payload) ?? {}
+  const reason = readString(record, ['reason', 'not_onboardable_reason', 'notOnboardableReason'])
   return {
-    symbol: normalized,
-    hasExchangeSuffix: Boolean(suffix),
-    providerQualified: Boolean(suffix && listing),
-    region: listing?.region ?? null,
-    exchange: listing?.exchange ?? null,
-  }
-}
-
-export function manualCandidateForSymbol(symbol: string, bareSymbolRegion: string | null): RelationshipMapOnboardingCandidate {
-  const inference = inferManualListing(symbol)
-  const region = inference.region ?? (inference.hasExchangeSuffix ? null : bareSymbolRegion?.trim().toLowerCase() ?? null)
-  return {
-    symbol: inference.symbol,
-    name: null,
-    country: region?.toUpperCase() ?? 'UNKNOWN',
-    onboardSymbol: inference.symbol,
-    onboardRegion: region,
-    onboardExchange: inference.exchange,
-    isOnboardable: Boolean(region),
-    notOnboardableReason: region ? null : inference.hasExchangeSuffix ? 'Exchange suffix is not recognized.' : 'Choose a market/listing for symbols without an exchange suffix.',
-    themes: [],
-    etfs: [],
-    adjacency: 0,
-    score: 0,
-    weight: 0,
-    readiness: tickerReadinessBadge({
-      coverageState: 'not_tracked',
-      registryStatus: 'not_tracked',
-    }),
+    query: readString(record, ['query', 'q']),
+    candidates: readPreviewCandidates(payload),
+    reason,
   }
 }
 
@@ -286,6 +243,7 @@ export function rowToCandidate(row: OnboardingRow): RelationshipMapOnboardingCan
     onboardRegion: row.region,
     onboardExchange: row.exchange,
     isOnboardable: true,
+    alreadyTracked: row.status === 'ready',
     themes: [],
     etfs: [],
     adjacency: 0,
@@ -293,6 +251,49 @@ export function rowToCandidate(row: OnboardingRow): RelationshipMapOnboardingCan
     weight: 0,
     readiness: row.readiness,
   }
+}
+
+function readPreviewCandidates(payload: unknown): RelationshipMapOnboardingCandidate[] {
+  const record = asRecord(payload)
+  const value = Array.isArray(payload) ? payload : record?.candidates
+  if (!Array.isArray(value)) return []
+  return value.map(normalizePreviewCandidate).filter((candidate): candidate is RelationshipMapOnboardingCandidate => Boolean(candidate))
+}
+
+function normalizePreviewCandidate(row: unknown): RelationshipMapOnboardingCandidate | null {
+  const record = asRecord(row)
+  if (!record) return null
+  const onboardSymbol = readString(record, ['onboard_symbol', 'onboardSymbol'])
+  const symbol = readString(record, ['symbol', 'display_symbol', 'displaySymbol', 'source_symbol', 'sourceSymbol', 'provider_symbol', 'providerSymbol']) ?? onboardSymbol
+  if (!symbol) return null
+  const alreadyTracked = readBoolean(record, ['already_tracked', 'alreadyTracked', 'is_tracked', 'isTracked', 'tracked'])
+  const readinessState = readString(record, ['readiness_state', 'readinessState', 'readiness'])
+  const isOnboardable = readBoolean(record, ['is_onboardable', 'isOnboardable'])
+  const country = readString(record, ['home_country', 'homeCountry', 'source_country', 'sourceCountry', 'country']) ?? 'UNKNOWN'
+  const candidate: RelationshipMapOnboardingCandidate = {
+    symbol,
+    sourceSymbol: readString(record, ['source_symbol', 'sourceSymbol']),
+    displaySymbol: readString(record, ['display_symbol', 'displaySymbol']),
+    name: readString(record, ['name']),
+    country,
+    providerSymbol: readString(record, ['provider_symbol', 'providerSymbol']),
+    onboardSymbol,
+    onboardRegion: readString(record, ['onboard_region', 'onboardRegion']),
+    onboardExchange: readString(record, ['onboard_exchange', 'onboardExchange']),
+    isOnboardable: isOnboardable ?? alreadyTracked !== true,
+    notOnboardableReason: readString(record, ['not_onboardable_reason', 'notOnboardableReason']),
+    resolutionSource: readString(record, ['resolution_source', 'resolutionSource']),
+    alreadyTracked,
+    readinessState,
+    homeCountry: readString(record, ['home_country', 'homeCountry']),
+    themes: [],
+    etfs: [],
+    adjacency: 0,
+    score: 0,
+    weight: 0,
+    readiness: readinessFromRecord(record, readinessState),
+  }
+  return candidate
 }
 
 export function isRemovableOnboardingStatus(status: string): boolean {

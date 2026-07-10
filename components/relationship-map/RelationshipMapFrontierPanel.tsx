@@ -9,11 +9,10 @@ import {
   candidateKey,
   candidateOnboardSymbol,
   groupCandidatesForBulkOnboard,
-  inferManualListing,
   isCandidateOnboardable,
   isRemovableOnboardingStatus,
-  manualCandidateForSymbol,
   normalizeOnboardingRow,
+  normalizeOnboardingPreview,
   readinessFromRecord,
   rowToCandidate,
   seedOnboardingRows,
@@ -57,7 +56,12 @@ export function RelationshipMapFrontierPanel() {
   const [submitting, setSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [adHocSymbols, setAdHocSymbols] = useState('')
-  const [adHocListingRegion, setAdHocListingRegion] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewCandidates, setPreviewCandidates] = useState<FrontierCandidate[]>([])
+  const [previewReason, setPreviewReason] = useState<string | null>(null)
+  const [previewQuery, setPreviewQuery] = useState('')
+  const [selectedPreviewKey, setSelectedPreviewKey] = useState<string | null>(null)
   const [bulkSubmitting, setBulkSubmitting] = useState(false)
   const [bulkMessage, setBulkMessage] = useState<string | null>(null)
 
@@ -97,29 +101,15 @@ export function RelationshipMapFrontierPanel() {
     [onboarding]
   )
   const unavailable = Boolean(error && !loading)
-  const adHocParsedSymbols = useMemo(() => parseSymbolInput(adHocSymbols), [adHocSymbols])
-  const adHocBareSymbols = useMemo(
-    () => adHocParsedSymbols.filter((symbol) => {
-      const listing = inferManualListing(symbol)
-      return !listing.hasExchangeSuffix
-    }),
-    [adHocParsedSymbols],
+  const adHocQuery = adHocSymbols.trim()
+  const selectedPreviewCandidate = useMemo(
+    () => previewCandidates.find((candidate) => candidateKey(candidate) === selectedPreviewKey) ?? null,
+    [previewCandidates, selectedPreviewKey],
   )
-  const adHocQualifiedListings = useMemo(
-    () => adHocParsedSymbols.map(inferManualListing).filter((listing) => listing.providerQualified),
-    [adHocParsedSymbols],
-  )
-  const adHocUnresolvedQualifiedSymbols = useMemo(
-    () => adHocParsedSymbols.map(inferManualListing).filter((listing) => listing.hasExchangeSuffix && !listing.providerQualified).map((listing) => listing.symbol),
-    [adHocParsedSymbols],
-  )
-  const adHocNeedsListingRegion = adHocBareSymbols.length > 0
   const adHocKnownCandidates = useMemo(() => {
-    const typed = new Set(
-      adHocParsedSymbols,
-    )
+    const typed = new Set(parseSymbolInput(adHocSymbols))
     return candidates.filter((candidate) => typed.has(candidate.symbol.toUpperCase())).map((c) => c.symbol)
-  }, [adHocParsedSymbols, candidates])
+  }, [adHocSymbols, candidates])
 
   const refreshStatuses = useCallback(async (rows?: OnboardingRow[]) => {
     const sourceRows = rows ?? Object.values(onboarding)
@@ -242,27 +232,43 @@ export function RelationshipMapFrontierPanel() {
     setSubmitting(false)
   }
 
+  async function previewAdHoc() {
+    const query = adHocQuery
+    if (!query) return
+    setPreviewLoading(true)
+    setPreviewError(null)
+    setPreviewCandidates([])
+    setPreviewReason(null)
+    setSelectedPreviewKey(null)
+    try {
+      const response = await requestClientJson(`/api/tickers/onboarding-preview?q=${encodeURIComponent(query)}`)
+      const preview = normalizeOnboardingPreview(response)
+      setPreviewCandidates(preview.candidates)
+      setPreviewReason(preview.reason)
+      setPreviewQuery(query)
+      setActionError(null)
+    } catch (previewRequestError) {
+      setPreviewError(readErrorMessage(previewRequestError))
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
   async function onboardAdHoc() {
-    const symbols = adHocParsedSymbols
-    if (symbols.length === 0) return
-    if (symbols.length > ONBOARD_BATCH_CAP) {
-      setActionError(`Enter at most ${ONBOARD_BATCH_CAP} symbols for a direct backfill.`)
+    if (!selectedPreviewCandidate) {
+      setActionError('Select a canonical listing before onboarding.')
       return
     }
-    const selectedListingRegion = adHocListingRegion.trim().toLowerCase()
-    if (adHocBareSymbols.length > 0 && !selectedListingRegion) {
-      setActionError('Choose a market/listing before submitting symbols without an exchange suffix.')
+    if (selectedPreviewCandidate.alreadyTracked) {
+      setActionError(`${candidateOnboardSymbol(selectedPreviewCandidate)} is already tracked.`)
       return
     }
-    if (adHocUnresolvedQualifiedSymbols.length > 0) {
-      setActionError(`Unrecognized exchange suffix for ${adHocUnresolvedQualifiedSymbols.join(', ')}.`)
+    if (!isCandidateOnboardable(selectedPreviewCandidate)) {
+      setActionError(selectedPreviewCandidate.notOnboardableReason ?? 'Selected listing is not onboardable.')
       return
     }
-    const synthetic: FrontierCandidate[] = symbols.map((symbol) => manualCandidateForSymbol(symbol, selectedListingRegion || null))
     setActionError(null)
-    setAdHocSymbols('')
-    setAdHocListingRegion('')
-    await onboardCandidates(synthetic)
+    await onboardCandidates([selectedPreviewCandidate])
   }
 
   async function onboardSelectedBulk() {
@@ -555,51 +561,96 @@ export function RelationshipMapFrontierPanel() {
       <section className="card compact-card relationship-map-adhoc-panel" aria-label="Direct ticker backfill">
         <h3>Backfill tickers directly</h3>
         <p className="small">
-          Type symbols (need not be on the list) to onboard + full-backfill now — prices, fundamentals, earnings,
-          technicals. Runs in the background; appears in the map on the next daily build.
+          Preview the backend canonical listing first, then onboard the selected listing.
         </p>
-        <p className="small">Market/listing is needed only for ambiguous symbols without an exchange suffix.</p>
         <div className="relationship-map-frontier-toolbar">
           <input
-            aria-label="Symbols to backfill"
+            aria-label="Symbol to preview"
             className="relationship-map-adhoc-input"
             value={adHocSymbols}
-            onChange={(event) => setAdHocSymbols(event.target.value)}
-            placeholder="e.g. ZEAL.CO, 9766.T, U"
+            onChange={(event) => {
+              setAdHocSymbols(event.target.value)
+              setPreviewCandidates([])
+              setPreviewReason(null)
+              setPreviewError(null)
+              setPreviewQuery('')
+              setSelectedPreviewKey(null)
+            }}
+            placeholder="e.g. VWS, VWS.CO, 9766.T"
             type="text"
           />
-          <select
-            aria-label="Market/listing"
-            disabled={adHocParsedSymbols.length > 0 && !adHocNeedsListingRegion}
-            value={adHocListingRegion}
-            onChange={(event) => setAdHocListingRegion(event.target.value)}
+          <button
+            className="secondary relationship-map-action-button"
+            type="button"
+            onClick={() => void previewAdHoc()}
+            disabled={previewLoading || !adHocQuery}
           >
-            <option value="">Market/listing</option>
-            <option value="us">US listing</option>
-            <option value="eu">EU listing</option>
-            <option value="apac">APAC listing</option>
-            <option value="global">Global listing</option>
-          </select>
+            {previewLoading ? 'Previewing...' : 'Preview listings'}
+          </button>
           <button
             className="primary relationship-map-action-button"
             type="button"
             onClick={() => void onboardAdHoc()}
-            disabled={submitting || adHocParsedSymbols.length === 0 || adHocUnresolvedQualifiedSymbols.length > 0 || (adHocNeedsListingRegion && !adHocListingRegion)}
+            disabled={submitting || !selectedPreviewCandidate || selectedPreviewCandidate.alreadyTracked === true || !isCandidateOnboardable(selectedPreviewCandidate)}
           >
             Full backfill
           </button>
         </div>
-        {adHocUnresolvedQualifiedSymbols.length > 0 ? (
-          <div className="small">Unrecognized exchange suffix: {adHocUnresolvedQualifiedSymbols.join(', ')}</div>
+        {previewError ? <div className="error">{previewError}</div> : null}
+        {previewQuery && !previewLoading && previewCandidates.length === 0 ? (
+          <div className="small">No canonical listing found{previewReason ? `: ${previewReason}` : '.'}</div>
         ) : null}
-        {adHocQualifiedListings.length > 0 ? (
-          <div className="small">
-            Inferred from suffix: {adHocQualifiedListings.map((listing) => `${listing.symbol} -> ${listing.region?.toUpperCase()}${listing.exchange ? `/${listing.exchange}` : ''}`).join(', ')}
-          </div>
-        ) : null}
-        {adHocBareSymbols.length > 0 && adHocListingRegion ? (
-          <div className="small">
-            User-selected listing assumption for bare symbol{adHocBareSymbols.length === 1 ? '' : 's'}: {adHocBareSymbols.join(', ')} as {adHocListingRegion.toUpperCase()}
+        {previewCandidates.length > 0 ? (
+          <div className="table-wrap relationship-map-table relationship-map-preview-table-wrap">
+            <table className="registry-table relationship-map-preview-table">
+              <thead>
+                <tr>
+                  <th>Select</th>
+                  <th>Source</th>
+                  <th>Name</th>
+                  <th>Onboard</th>
+                  <th>Home</th>
+                  <th>Region</th>
+                  <th>Exchange</th>
+                  <th>Readiness</th>
+                </tr>
+              </thead>
+              <tbody>
+                {previewCandidates.map((candidate) => {
+                  const key = candidateKey(candidate)
+                  const onboardable = isCandidateOnboardable(candidate)
+                  const disabled = candidate.alreadyTracked === true || !onboardable
+                  return (
+                    <tr key={key}>
+                      <td>
+                        <input
+                          aria-label={`Select ${candidateOnboardSymbol(candidate)}`}
+                          checked={selectedPreviewKey === key}
+                          className="relationship-map-select-checkbox"
+                          disabled={disabled}
+                          onChange={(event) => setSelectedPreviewKey(event.target.checked ? key : null)}
+                          type="radio"
+                        />
+                      </td>
+                      <td>
+                        <strong>{candidate.displaySymbol ?? candidate.symbol}</strong>
+                        {candidate.sourceSymbol && candidate.sourceSymbol !== candidate.symbol ? <div className="small">Source: {candidate.sourceSymbol}</div> : null}
+                      </td>
+                      <td>{candidate.name ?? '-'}</td>
+                      <td><strong>{candidateOnboardSymbol(candidate)}</strong></td>
+                      <td>{candidate.homeCountry ?? candidate.country}</td>
+                      <td>{candidate.onboardRegion?.toUpperCase() ?? '-'}</td>
+                      <td>{candidate.onboardExchange ?? '-'}</td>
+                      <td>
+                        {candidate.alreadyTracked ? <span className="badge completed">Already tracked</span> : <span className={`badge ${candidate.readiness.className}`}>{candidate.readiness.label}</span>}
+                        {candidate.notOnboardableReason ? <div className="small">{candidate.notOnboardableReason}</div> : null}
+                        {candidate.readinessState ? <div className="small">{candidate.readinessState}</div> : null}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         ) : null}
         {adHocKnownCandidates.length > 0 ? (
@@ -743,6 +794,9 @@ function normalizeCandidate(row: unknown): FrontierCandidate | null {
     isOnboardable: readBoolean(record, ['isOnboardable', 'is_onboardable']),
     notOnboardableReason: readString(record, ['notOnboardableReason', 'not_onboardable_reason']),
     resolutionSource: readString(record, ['resolutionSource', 'resolution_source']),
+    alreadyTracked: readBoolean(record, ['alreadyTracked', 'already_tracked']),
+    readinessState: readString(record, ['readinessState', 'readiness_state']),
+    homeCountry: readString(record, ['homeCountry', 'home_country']),
     themes: readStringList(record.themes),
     etfs: readStringList(record.etfs),
     adjacency: readNumber(record, ['adjacency']) ?? 0,

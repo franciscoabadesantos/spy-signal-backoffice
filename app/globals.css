@@ -660,6 +660,37 @@ button:disabled {
   width: 92px;
 }
 
+.relationship-map-preview-table {
+  min-width: 860px;
+  table-layout: fixed;
+}
+
+.relationship-map-preview-table th:nth-child(1),
+.relationship-map-preview-table td:nth-child(1) {
+  width: 56px;
+}
+
+.relationship-map-preview-table th:nth-child(2),
+.relationship-map-preview-table td:nth-child(2),
+.relationship-map-preview-table th:nth-child(4),
+.relationship-map-preview-table td:nth-child(4) {
+  width: 120px;
+}
+
+.relationship-map-preview-table th:nth-child(5),
+.relationship-map-preview-table td:nth-child(5),
+.relationship-map-preview-table th:nth-child(6),
+.relationship-map-preview-table td:nth-child(6),
+.relationship-map-preview-table th:nth-child(7),
+.relationship-map-preview-table td:nth-child(7) {
+  width: 84px;
+}
+
+.relationship-map-preview-table th:nth-child(8),
+.relationship-map-preview-table td:nth-child(8) {
+  width: 150px;
+}
+
 .relationship-map-flags {
   margin-top: 0;
 }

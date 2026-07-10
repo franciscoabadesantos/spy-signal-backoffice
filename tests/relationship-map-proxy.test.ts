@@ -6,6 +6,7 @@ import { GET as sourceHealthGet } from '../app/api/relationship-map/source-healt
 import { POST as tickerRemovePost } from '../app/api/tickers/remove/route'
 import { POST as tickerRequestPost } from '../app/api/tickers/request/route'
 import { GET as tickerStatusGet } from '../app/api/tickers/status/route'
+import { GET as tickerOnboardingPreviewGet } from '../app/api/tickers/onboarding-preview/route'
 
 describe('Relationship Map Proxy Routes', () => {
   it('should export GET handlers for relationship-map routes', () => {
@@ -15,5 +16,6 @@ describe('Relationship Map Proxy Routes', () => {
     assert.strictEqual(typeof tickerRequestPost, 'function')
     assert.strictEqual(typeof tickerStatusGet, 'function')
     assert.strictEqual(typeof tickerRemovePost, 'function')
+    assert.strictEqual(typeof tickerOnboardingPreviewGet, 'function')
   })
 })
