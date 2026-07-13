@@ -1962,9 +1962,41 @@ details summary {
   margin-top: 12px;
 }
 
+.operations-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.operations-header h1 {
+  margin: 6px 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.operations-primary-link {
+  min-height: 42px;
+  border: 1px solid #0f172a;
+  background: #0f172a;
+  color: #fff;
+}
+
+.operations-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .operations-inline-action {
   width: auto;
   white-space: nowrap;
+}
+
+.operations-status-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .operations-section {
@@ -1975,6 +2007,19 @@ details summary {
 
 .operations-section h3 {
   margin: 0;
+}
+
+.operations-warning {
+  display: grid;
+  gap: 8px;
+}
+
+.operations-table {
+  min-width: 860px;
+}
+
+.operations-failure-row {
+  justify-content: space-between;
 }
 
 .operation-card {
@@ -2722,6 +2767,8 @@ details summary {
   .calendar-months,
   .operations-grid,
   .operations-pool-grid,
+  .operations-header,
+  .operations-summary-grid,
   .planned-grid,
   .evaluation-layout,
   .chart-grid,

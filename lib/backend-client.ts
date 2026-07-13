@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { mapAuthErrorStatus, requireAdminUser } from '@/lib/admin-auth'
-import { JsonResponseParseError, readJsonResponse } from '@/lib/http-json'
+import { mapAuthErrorStatus, requireAdminUser } from './admin-auth'
+import { JsonResponseParseError, readJsonResponse } from './http-json'
 
 type ProxyBackendJsonOptions = {
   path: string

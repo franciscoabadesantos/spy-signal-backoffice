@@ -1,125 +1,231 @@
-const PREFECT_UI_URL = 'https://prefect.longbrunch.com'
-const PREFECT_DEPLOYMENTS_URL = `${PREFECT_UI_URL}/deployments`
-const PREFECT_WORK_POOLS_URL = `${PREFECT_UI_URL}/work-pools`
+import { PREFECT_FALLBACK_UI_URL, type PrefectOverview } from '@/lib/prefect-overview'
 
-const WORK_POOLS = [
-  'finance-ops-self-host',
-  'finance-feature-store',
-]
+type OperationsWorkspaceProps = {
+  adminEmail: string
+  overview?: PrefectOverview
+  loadError?: string
+}
 
-const DEPLOYMENT_GROUPS = [
-  {
-    label: 'Data ops',
-    deployments: [
-      ['Market daily', 'dataops_market_daily/market-daily'],
-      ['Fundamentals daily', 'dataops_fundamentals_daily/fundamentals-daily'],
-      ['Earnings daily', 'dataops_earnings_daily/earnings-daily'],
-      ['Data ops daily', 'dataops_daily/dataops-daily'],
-      ['Ticker onboarding', 'dataops_ticker_onboarding/ticker-onboarding'],
-      ['Ticker onboarding bulk', 'dataops_ticker_onboarding_bulk/ticker-onboarding-bulk'],
-      ['Ticker backfill', 'dataops_ticker_backfill/ticker-backfill'],
-      ['Ticker remove', 'dataops_ticker_remove/ticker-remove'],
-    ],
-  },
-  {
-    label: 'Feature store',
-    deployments: [
-      ['Feature build daily', 'feature-build-daily/feature-build-daily'],
-      ['Scorecard daily', 'scorecard-daily/scorecard-daily'],
-      ['Technical feature backfill', 'technical-feature-backfill/technical-feature-backfill'],
-    ],
-  },
-] satisfies Array<{ label: string; deployments: Array<[string, string]> }>
+export default function OperationsWorkspace({ adminEmail, overview, loadError }: OperationsWorkspaceProps) {
+  const uiUrl = overview?.uiUrl || PREFECT_FALLBACK_UI_URL
 
-export default function OperationsWorkspace({ adminEmail }: { adminEmail: string }) {
   return (
     <div className="page-stack">
-      <div className="hero-panel">
+      <div className="card operations-header">
         <div>
           <p className="eyebrow">Operations</p>
-          <h1>Prefect shortcuts and lightweight operational visibility.</h1>
-          <p className="hero-copy">
-            Read-only Backoffice surface for primary work pools and deployments. Use Prefect UI for detailed run inspection and operational actions.
-          </p>
+          <h1>Prefect overview</h1>
+          <p className="small">Admin: {adminEmail}</p>
         </div>
-        <div className="hero-actions">
-          <div className="small">Admin: {adminEmail}</div>
-          <a className="hero-link" href={PREFECT_UI_URL} rel="noreferrer" target="_blank">
-            Open Prefect UI
-          </a>
-        </div>
+        <a className="hero-link operations-primary-link" href={uiUrl} rel="noreferrer" target="_blank">
+          Open Prefect UI
+        </a>
       </div>
 
-      <div className="card">
-        <div className="split-row">
-          <div>
-            <h2>Work Pools</h2>
-            <p className="small">Stable pool names only. Status requires a future read-only backend overview endpoint.</p>
-          </div>
-          <a className="secondary-button operations-inline-action" href={PREFECT_WORK_POOLS_URL} rel="noreferrer" target="_blank">
-            Open work pools
-          </a>
+      {loadError ? (
+        <div className="error">
+          <strong>Prefect overview unavailable</strong>
+          <div>{loadError}</div>
+          <div className="small">Use the manual Prefect UI link while the backend overview endpoint is unavailable.</div>
         </div>
-        <div className="operations-pool-grid">
-          {WORK_POOLS.map((pool) => (
-            <a className="control-kpi-card" href={PREFECT_WORK_POOLS_URL} key={pool} rel="noreferrer" target="_blank">
-              <label>{pool}</label>
-              <span className="badge muted">Shortcut</span>
-              <div className="small">Backend status not wired yet.</div>
-            </a>
-          ))}
-        </div>
-      </div>
+      ) : null}
 
-      <div className="card">
-        <div className="split-row">
-          <div>
-            <h2>Deployments</h2>
-            <p className="small">Links go to Prefect UI lists, not deployment IDs.</p>
-          </div>
-          <a className="secondary-button operations-inline-action" href={PREFECT_DEPLOYMENTS_URL} rel="noreferrer" target="_blank">
-            Open deployments
-          </a>
+      {overview?.errors.length ? (
+        <div className="warning operations-warning">
+          <strong>Backend warnings</strong>
+          <ul className="plain-list">
+            {overview.errors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
         </div>
+      ) : null}
 
-        {DEPLOYMENT_GROUPS.map((group) => (
-          <div className="operations-section" key={group.label}>
-            <h3>{group.label}</h3>
-            <div className="table-wrap">
-              <table className="registry-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Prefect deployment</th>
-                    <th>Link</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.deployments.map(([label, prefectName]) => (
-                    <tr key={prefectName}>
-                      <td>{label}</td>
-                      <td><code>{prefectName}</code></td>
-                      <td>
-                        <a className="text-link" href={PREFECT_DEPLOYMENTS_URL} rel="noreferrer" target="_blank">
-                          Open in Prefect
-                        </a>
-                      </td>
+      {overview ? (
+        <>
+          <div className="operations-summary-grid">
+            <Metric label="Work pools" value={overview.workPools.length} />
+            <Metric label="Deployments" value={overview.deploymentCount} />
+            <Metric label="Scheduled" value={overview.scheduledCount} />
+            <Metric label="Recent failures" value={overview.recentFailures.length} tone={overview.recentFailures.length ? 'red' : 'green'} />
+          </div>
+
+          <section className="card">
+            <SectionHeader title="Work Pools" count={overview.workPools.length} />
+            {overview.workPools.length ? (
+              <div className="operations-pool-grid">
+                {overview.workPools.map((pool) => (
+                  <div className="control-kpi-card" key={pool.name}>
+                    <label>{pool.name}</label>
+                    <div className="operations-status-line">
+                      <span className={statusBadgeClass(pool.status)}>{pool.status || 'unknown'}</span>
+                      <span className={pool.isPaused ? 'badge running' : 'badge completed'}>
+                        {pool.isPaused === null ? 'pause unknown' : pool.isPaused ? 'paused' : 'active'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : <EmptyState label="No work pools returned." />}
+          </section>
+
+          <section className="card">
+            <SectionHeader title="Deployments" count={overview.deployments.length} />
+            {overview.deployments.length ? (
+              <div className="table-wrap">
+                <table className="registry-table operations-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Work pool</th>
+                      <th>Next run</th>
+                      <th>Last state</th>
+                      <th>Last run</th>
+                      <th>Link</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))}
-      </div>
+                  </thead>
+                  <tbody>
+                    {overview.deployments.map((deployment) => (
+                      <tr key={`${deployment.name}-${deployment.workPoolName}`}>
+                        <td>
+                          <strong>{deployment.displayName || deployment.name}</strong>
+                          {deployment.displayName && deployment.displayName !== deployment.name ? <div className="small">{deployment.name}</div> : null}
+                        </td>
+                        <td>{deployment.workPoolName || 'unknown'}</td>
+                        <td>{formatDateTime(deployment.nextRunAt)}</td>
+                        <td><span className={statusBadgeClass(deployment.lastRunState)}>{deployment.lastRunState || 'unknown'}</span></td>
+                        <td>{formatDateTime(deployment.lastRunAt)}</td>
+                        <td><ExternalLink href={deployment.url} label="Open" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <EmptyState label="No deployments returned." />}
+          </section>
 
-      <div className="card">
-        <h2>Runs Overview</h2>
-        <div className="evidence-gap">
-          <strong>Backend overview endpoint not available yet</strong>
-          <span>Next scheduled runs and latest runs will appear here once Backoffice has a read-only backend contract.</span>
-        </div>
-      </div>
+          <section className="card">
+            <SectionHeader title="Upcoming Scheduled Runs" count={overview.scheduledRuns.length} />
+            {overview.scheduledRuns.length ? (
+              <div className="table-wrap">
+                <table className="registry-table operations-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Deployment</th>
+                      <th>Expected start</th>
+                      <th>State</th>
+                      <th>Link</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overview.scheduledRuns.map((run) => (
+                      <tr key={`${run.name}-${run.deploymentName}-${run.expectedStartTime}`}>
+                        <td>{run.name || 'unnamed run'}</td>
+                        <td>{run.deploymentName || 'unknown'}</td>
+                        <td>{formatDateTime(run.expectedStartTime)}</td>
+                        <td><span className={statusBadgeClass(run.stateName)}>{run.stateName || 'unknown'}</span></td>
+                        <td><ExternalLink href={run.url} label="Open" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <EmptyState label="No scheduled runs returned." />}
+          </section>
+
+          <section className="card">
+            <SectionHeader title="Recent Failures" count={overview.recentFailures.length} />
+            {overview.recentFailures.length ? (
+              <div className="feed-list">
+                {overview.recentFailures.map((failure, index) => (
+                  <div className="feed-row operations-failure-row" key={`${failure.message}-${index}`}>
+                    <span className="feed-dot red" />
+                    <span>{failure.message || 'Failure without message'}</span>
+                    <ExternalLink href={failure.url} label="Open" />
+                  </div>
+                ))}
+              </div>
+            ) : <EmptyState label="No recent failures returned." />}
+          </section>
+
+          <section className="card">
+            <SectionHeader title="Recent Runs" count={overview.recentRuns.length} />
+            {overview.recentRuns.length ? (
+              <div className="table-wrap">
+                <table className="registry-table operations-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Deployment</th>
+                      <th>State</th>
+                      <th>Started</th>
+                      <th>Ended</th>
+                      <th>Link</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overview.recentRuns.map((run) => (
+                      <tr key={`${run.name}-${run.deploymentName}-${run.startTime}`}>
+                        <td>{run.name || 'unnamed run'}</td>
+                        <td>{run.deploymentName || 'unknown'}</td>
+                        <td><span className={statusBadgeClass(run.stateName)}>{run.stateName || 'unknown'}</span></td>
+                        <td>{formatDateTime(run.startTime)}</td>
+                        <td>{formatDateTime(run.endTime)}</td>
+                        <td><ExternalLink href={run.url} label="Open" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <EmptyState label="No recent runs returned." />}
+          </section>
+        </>
+      ) : null}
     </div>
   )
+}
+
+function Metric({ label, value, tone }: { label: string; value: number; tone?: 'green' | 'red' }) {
+  return (
+    <div className="card compact-card">
+      <label>{label}</label>
+      <div className={tone === 'red' ? 'metric-value text-red' : tone === 'green' ? 'metric-value text-green' : 'metric-value'}>{value}</div>
+    </div>
+  )
+}
+
+function SectionHeader({ title, count }: { title: string; count: number }) {
+  return (
+    <div className="split-row">
+      <h2>{title}</h2>
+      <span className="badge muted">{count}</span>
+    </div>
+  )
+}
+
+function EmptyState({ label }: { label: string }) {
+  return <p className="small empty-state">{label}</p>
+}
+
+function ExternalLink({ href, label }: { href: string; label: string }) {
+  if (!href) return <span className="small">No link</span>
+  return <a className="text-link" href={href} rel="noreferrer" target="_blank">{label}</a>
+}
+
+function formatDateTime(value: string): string {
+  if (!value) return 'not scheduled'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
+function statusBadgeClass(status: string): string {
+  const normalized = status.trim().toLowerCase()
+  if (['completed', 'complete', 'success', 'ready', 'active', 'healthy'].includes(normalized)) return 'badge completed'
+  if (['scheduled', 'pending', 'queued', 'late'].includes(normalized)) return 'badge queued'
+  if (['running', 'paused', 'cancelling'].includes(normalized)) return 'badge running'
+  if (['failed', 'crashed', 'error', 'unhealthy'].includes(normalized)) return 'badge failed'
+  if (['cancelled', 'canceled'].includes(normalized)) return 'badge cancelled'
+  return 'badge muted'
 }
