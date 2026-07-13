@@ -243,7 +243,7 @@ function buildActions(
   if (failedJob) {
     actions.push({
       text: `${readText(failedJob, ['name', 'analysis_type', 'job_id', 'id']) || 'Job'} failed`,
-      href: '/operations',
+      href: '/analyst',
       sub: timeAgo(readText(failedJob, ['failed_at', 'finished_at', 'updated_at', 'created_at'])),
     })
   }
@@ -276,7 +276,7 @@ function buildFeed(
     })),
     ...jobs.map((row) => ({
       text: `Analyst job ${truncateId(readText(row, ['job_id', 'id']) || 'unknown', 12)} ${readText(row, ['status', 'state']) || 'updated'}`,
-      href: '/operations',
+      href: '/analyst',
       at: readText(row, ['updated_at', 'finished_at', 'created_at']),
       tone: toneForStatus(readLower(row, ['status', 'state'])),
     })),

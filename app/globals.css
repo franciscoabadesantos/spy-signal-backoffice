@@ -1955,6 +1955,28 @@ details summary {
   gap: 16px;
 }
 
+.operations-pool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.operations-inline-action {
+  width: auto;
+  white-space: nowrap;
+}
+
+.operations-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.operations-section h3 {
+  margin: 0;
+}
+
 .operation-card {
   display: grid;
   gap: 12px;
@@ -2699,6 +2721,7 @@ details summary {
   .feature-grid,
   .calendar-months,
   .operations-grid,
+  .operations-pool-grid,
   .planned-grid,
   .evaluation-layout,
   .chart-grid,

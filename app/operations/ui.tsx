@@ -1,208 +1,125 @@
-'use client'
+const PREFECT_UI_URL = 'https://prefect.longbrunch.com'
+const PREFECT_DEPLOYMENTS_URL = `${PREFECT_UI_URL}/deployments`
+const PREFECT_WORK_POOLS_URL = `${PREFECT_UI_URL}/work-pools`
 
-import { useEffect, useMemo, useState } from 'react'
-import { readApiError } from '@/lib/api-error'
-import { requestClientJson } from '@/lib/client-json'
-import { ApiErrorBox, DynamicTable, EvidenceGap, asRecord, readArrayPayload, readString } from '@/app/components/workspace-data'
-
-const OLD_RUNNING_MINUTES = 30
-
-const JOB_COLUMNS = [
-  { key: 'id', label: 'ID', keys: ['job_id', 'backend_job_id', 'experiment_id', 'id'] },
-  { key: 'status', label: 'Status' },
-  { key: 'ticker', label: 'Ticker / Symbols', keys: ['ticker', 'symbols'] },
-  { key: 'type', label: 'Type', keys: ['analysis_type', 'strategy_family', 'domain'] },
-  { key: 'created_at', label: 'Created' },
-  { key: 'started_at', label: 'Started' },
-  { key: 'finished_at', label: 'Finished' },
-  { key: 'error_message', label: 'Error' },
+const WORK_POOLS = [
+  'finance-ops-self-host',
+  'finance-feature-store',
 ]
 
-const MISSING_QUEUE_CONTRACTS = [
-  'no queue depth endpoint',
-  'no worker heartbeat endpoint',
-  'no dispatch lag endpoint',
-  'no dead-letter/failed task endpoint',
-  'no unified retry/cancel across job types',
-]
-
-type OperationsState = {
-  analystJobs: unknown[]
-  dataOpsJobs: unknown[]
-  researchJobs: unknown[]
-}
+const DEPLOYMENT_GROUPS = [
+  {
+    label: 'Data ops',
+    deployments: [
+      ['Market daily', 'dataops_market_daily/market-daily'],
+      ['Fundamentals daily', 'dataops_fundamentals_daily/fundamentals-daily'],
+      ['Earnings daily', 'dataops_earnings_daily/earnings-daily'],
+      ['Data ops daily', 'dataops_daily/dataops-daily'],
+      ['Ticker onboarding', 'dataops_ticker_onboarding/ticker-onboarding'],
+      ['Ticker onboarding bulk', 'dataops_ticker_onboarding_bulk/ticker-onboarding-bulk'],
+      ['Ticker backfill', 'dataops_ticker_backfill/ticker-backfill'],
+      ['Ticker remove', 'dataops_ticker_remove/ticker-remove'],
+    ],
+  },
+  {
+    label: 'Feature store',
+    deployments: [
+      ['Feature build daily', 'feature-build-daily/feature-build-daily'],
+      ['Scorecard daily', 'scorecard-daily/scorecard-daily'],
+      ['Technical feature backfill', 'technical-feature-backfill/technical-feature-backfill'],
+    ],
+  },
+] satisfies Array<{ label: string; deployments: Array<[string, string]> }>
 
 export default function OperationsWorkspace({ adminEmail }: { adminEmail: string }) {
-  const [state, setState] = useState<OperationsState>({ analystJobs: [], dataOpsJobs: [], researchJobs: [] })
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function loadOperations() {
-    setLoading(true)
-    setError(null)
-    try {
-      const [analystPayload, dataOpsPayload, researchPayload] = await Promise.all([
-        requestClientJson('/api/analyst/jobs?limit=100'),
-        requestClientJson('/api/data-ops/rebuild-jobs?limit=100'),
-        requestClientJson('/api/research/experiments?limit=100'),
-      ])
-      setState({
-        analystJobs: readArrayPayload(analystPayload, 'jobs'),
-        dataOpsJobs: readArrayPayload(dataOpsPayload, 'jobs'),
-        researchJobs: readArrayPayload(researchPayload, 'jobs'),
-      })
-    } catch (err) {
-      setError(readApiError(err, 'Failed to load operations data.'))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadOperations()
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [])
-
-  const summaries = useMemo(() => [
-    buildSummary('Analyst jobs', state.analystJobs),
-    buildSummary('Data Ops jobs', state.dataOpsJobs),
-    buildSummary('Research experiments', state.researchJobs),
-  ], [state])
-
-  const heuristicRows = useMemo(() => [
-    ...markSource('Analyst', state.analystJobs),
-    ...markSource('Data Ops', state.dataOpsJobs),
-    ...markSource('Research', state.researchJobs),
-  ].filter(isOldRunning), [state])
-
   return (
     <div className="page-stack">
       <div className="hero-panel">
         <div>
-          <p className="eyebrow">Queue & Worker Operations</p>
-          <h1>Aggregate today’s visible job surfaces without pretending worker health exists.</h1>
+          <p className="eyebrow">Operations</p>
+          <h1>Prefect shortcuts and lightweight operational visibility.</h1>
           <p className="hero-copy">
-            This workspace uses existing Analyst, Data Ops, and Research job list APIs. It computes only a UI heuristic for old queued/running rows; true queue depth and worker heartbeat remain backend gaps.
+            Read-only Backoffice surface for primary work pools and deployments. Use Prefect UI for detailed run inspection and operational actions.
           </p>
         </div>
         <div className="hero-actions">
           <div className="small">Admin: {adminEmail}</div>
-          <button className="hero-link" type="button" onClick={loadOperations} disabled={loading}>{loading ? 'Refreshing...' : 'Refresh Operations'}</button>
+          <a className="hero-link" href={PREFECT_UI_URL} rel="noreferrer" target="_blank">
+            Open Prefect UI
+          </a>
         </div>
       </div>
 
-      <ApiErrorBox error={error} />
+      <div className="card">
+        <div className="split-row">
+          <div>
+            <h2>Work Pools</h2>
+            <p className="small">Stable pool names only. Status requires a future read-only backend overview endpoint.</p>
+          </div>
+          <a className="secondary-button operations-inline-action" href={PREFECT_WORK_POOLS_URL} rel="noreferrer" target="_blank">
+            Open work pools
+          </a>
+        </div>
+        <div className="operations-pool-grid">
+          {WORK_POOLS.map((pool) => (
+            <a className="control-kpi-card" href={PREFECT_WORK_POOLS_URL} key={pool} rel="noreferrer" target="_blank">
+              <label>{pool}</label>
+              <span className="badge muted">Shortcut</span>
+              <div className="small">Backend status not wired yet.</div>
+            </a>
+          ))}
+        </div>
+      </div>
 
-      <div className="metric-grid">
-        {summaries.map((summary) => (
-          <div className="card compact-card" key={summary.label}>
-            <label>{summary.label}</label>
-            <div className="metric-value">{summary.total}</div>
-            <div className="small">Returned rows from existing backend list contract.</div>
-            <div className="status-chip-row">
-              {Object.entries(summary.byStatus).map(([status, count]) => (
-                <span className={`badge ${statusClass(status)}`} key={status}>{status}: {count}</span>
-              ))}
+      <div className="card">
+        <div className="split-row">
+          <div>
+            <h2>Deployments</h2>
+            <p className="small">Links go to Prefect UI lists, not deployment IDs.</p>
+          </div>
+          <a className="secondary-button operations-inline-action" href={PREFECT_DEPLOYMENTS_URL} rel="noreferrer" target="_blank">
+            Open deployments
+          </a>
+        </div>
+
+        {DEPLOYMENT_GROUPS.map((group) => (
+          <div className="operations-section" key={group.label}>
+            <h3>{group.label}</h3>
+            <div className="table-wrap">
+              <table className="registry-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Prefect deployment</th>
+                    <th>Link</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.deployments.map(([label, prefectName]) => (
+                    <tr key={prefectName}>
+                      <td>{label}</td>
+                      <td><code>{prefectName}</code></td>
+                      <td>
+                        <a className="text-link" href={PREFECT_DEPLOYMENTS_URL} rel="noreferrer" target="_blank">
+                          Open in Prefect
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         ))}
       </div>
 
       <div className="card">
-        <h2>UI-Only Old Queued/Running Heuristic</h2>
-        <p className="small">
-          This is not worker health. It flags rows whose status is queued/running and whose created_at or started_at timestamp is older than {OLD_RUNNING_MINUTES} minutes.
-        </p>
-        {heuristicRows.length > 0 ? (
-          <DynamicTable rows={heuristicRows} columns={[
-            { key: 'source', label: 'Source' },
-            ...JOB_COLUMNS,
-            { key: 'heuristicAgeMinutes', label: 'Approx Age (min)' },
-          ]} />
-        ) : (
-          <EvidenceGap
-            reason="No old queued/running rows matched the UI heuristic."
-            expected="Queued/running rows older than the local threshold from the visible job list contracts."
-            title="Queue heuristic evidence unavailable"
-          />
-        )}
-      </div>
-
-      <JobSection title="Analyst Jobs Summary" route="/api/analyst/jobs?limit=100" rows={state.analystJobs} />
-      <JobSection title="Data Ops Jobs Summary" route="/api/data-ops/rebuild-jobs?limit=100" rows={state.dataOpsJobs} />
-      <JobSection title="Research Jobs Summary" route="/api/research/experiments?limit=100" rows={state.researchJobs} />
-
-      <div className="card">
-        <h2>Missing Backend Contracts</h2>
-        <p className="small">These are required before Backoffice can show true queue and worker health.</p>
-        <ul className="plain-list">
-          {MISSING_QUEUE_CONTRACTS.map((gap) => (
-            <li key={gap}>{gap}</li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  )
-}
-
-function JobSection({ title, route, rows }: { title: string; route: string; rows: unknown[] }) {
-  return (
-    <div className="card">
-      <div className="split-row">
-        <div>
-          <h2>{title}</h2>
-          <p className="small">Local Backoffice API: {route}</p>
+        <h2>Runs Overview</h2>
+        <div className="evidence-gap">
+          <strong>Backend overview endpoint not available yet</strong>
+          <span>Next scheduled runs and latest runs will appear here once Backoffice has a read-only backend contract.</span>
         </div>
-        <div className="small">{rows.length} returned</div>
       </div>
-      {rows.length === 0 ? (
-        <EvidenceGap
-          reason={`No rows were returned from ${route}.`}
-          expected="Rows from the existing backend job list proxy."
-          title="Job list evidence unavailable"
-        />
-      ) : <DynamicTable rows={rows} columns={JOB_COLUMNS} />}
     </div>
   )
-}
-
-function buildSummary(label: string, rows: unknown[]) {
-  const byStatus: Record<string, number> = {}
-  for (const row of rows) {
-    const status = readString(row, ['status']).toLowerCase()
-    byStatus[status] = (byStatus[status] ?? 0) + 1
-  }
-  return { label, total: rows.length, byStatus }
-}
-
-function markSource(source: string, rows: unknown[]): unknown[] {
-  return rows.map((row) => {
-    const record = asRecord(row)
-    if (!record) return { source, value: row }
-    const age = ageMinutes(record.started_at ?? record.created_at)
-    return { source, ...record, heuristicAgeMinutes: age ?? '—' }
-  })
-}
-
-function isOldRunning(row: unknown): boolean {
-  const record = asRecord(row)
-  if (!record) return false
-  const status = String(record.status ?? '').toLowerCase()
-  if (status !== 'queued' && status !== 'running') return false
-  const age = typeof record.heuristicAgeMinutes === 'number' ? record.heuristicAgeMinutes : null
-  return age !== null && age > OLD_RUNNING_MINUTES
-}
-
-function ageMinutes(value: unknown): number | null {
-  if (typeof value !== 'string' || !value.trim()) return null
-  const timestamp = new Date(value).getTime()
-  if (Number.isNaN(timestamp)) return null
-  return Math.max(0, Math.round((Date.now() - timestamp) / 60_000))
-}
-
-function statusClass(status: string): string {
-  if (['queued', 'running', 'completed', 'failed', 'cancelled'].includes(status)) return status
-  return 'queued'
 }

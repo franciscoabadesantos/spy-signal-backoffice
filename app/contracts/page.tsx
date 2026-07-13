@@ -6,7 +6,7 @@ const AVAILABLE_CONTRACTS = [
     group: 'Data Ops',
     rows: [
       ['/analyst/data-ops/health', '/data-ops', 'available / proxied', 'Data readiness snapshot.'],
-      ['/analyst/data-ops/rebuild-jobs', '/data-ops, /operations', 'available / proxied', 'Rebuild job list and creation path.'],
+      ['/analyst/data-ops/rebuild-jobs', '/data-ops', 'available / proxied', 'Rebuild job list and creation path.'],
       ['/analyst/data-ops/rebuild-jobs/{job_id}', '/data-ops', 'available / proxied', 'Rebuild job detail.'],
       ['/analyst/data-ops/rebuild-jobs/{job_id}/retry', '/data-ops', 'available / proxied', 'Retry existing rebuild job.'],
       ['/analyst/data-ops/duplicates', '/data-ops', 'available / proxied', 'Duplicate inspection.'],
@@ -18,14 +18,14 @@ const AVAILABLE_CONTRACTS = [
   {
     group: 'Analyst',
     rows: [
-      ['/analyst/jobs', '/analyst, /operations', 'available / proxied', 'Ticker signal, snapshot, and coverage report jobs.'],
+      ['/analyst/jobs', '/analyst', 'available / proxied', 'Ticker signal, snapshot, and coverage report jobs.'],
       ['/analyst/jobs/{job_id}', '/analyst', 'available / proxied', 'Analyst job detail.'],
     ],
   },
   {
     group: 'Research',
     rows: [
-      ['/analyst/research/experiments', '/research, /operations', 'available / proxied', 'Research creation and run library.'],
+      ['/analyst/research/experiments', '/research', 'available / proxied', 'Research creation and run library.'],
       ['/analyst/research/experiments/{experiment_id}', '/research', 'available / proxied', 'Run detail.'],
       ['/analyst/research/experiments/{experiment_id}/events', '/research', 'available / proxied', 'Run events.'],
       ['/analyst/research/experiments/{experiment_id}/artifacts', '/research', 'available / proxied', 'Run artifacts.'],

@@ -31,7 +31,6 @@ type NavSection = {
 type Props = {
   health: SidebarHealth
   candidateCount?: number
-  failedJobCount?: number
   loadStatus?: boolean
 }
 
@@ -41,11 +40,10 @@ function Dot({ color }: { color: SidebarDot }) {
   )
 }
 
-export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = false }: Props) {
+export function Sidebar({ health, candidateCount, loadStatus = false }: Props) {
   const pathname = usePathname()
   const [sidebarHealth, setSidebarHealth] = useState(health)
   const [sidebarCandidateCount, setSidebarCandidateCount] = useState(candidateCount)
-  const [sidebarFailedJobCount, setSidebarFailedJobCount] = useState(failedJobCount)
   const isActive = (href: string) => {
     const cleanHref = href.split('#')[0]
     return cleanHref === '/' ? pathname === '/' : pathname.startsWith(cleanHref)
@@ -61,7 +59,6 @@ export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = f
         if (cancelled || !isSidebarState(payload)) return
         setSidebarHealth(payload.health)
         setSidebarCandidateCount(payload.candidateCount)
-        setSidebarFailedJobCount(payload.failedJobCount)
       } catch {
         // Sidebar health is non-critical; keep the initial gray state on failure.
       }
@@ -122,10 +119,9 @@ export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = f
       label: 'SYSTEM',
       items: [
         {
-          label: 'Job queue',
+          label: 'Operations',
           href: '/operations',
           dot: sidebarHealth.system,
-          badge: sidebarFailedJobCount ? `${sidebarFailedJobCount} fail` : undefined,
         },
         { label: 'Contracts', href: '/contracts', dot: 'gray' },
         { label: 'System', href: '/diagnostics', dot: sidebarHealth.system },
@@ -166,7 +162,6 @@ export function Sidebar({ health, candidateCount, failedJobCount, loadStatus = f
 function isSidebarState(payload: unknown): payload is {
   health: SidebarHealth
   candidateCount?: number
-  failedJobCount?: number
 } {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false
   const record = payload as Record<string, unknown>
