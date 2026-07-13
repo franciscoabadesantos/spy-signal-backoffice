@@ -24,19 +24,27 @@ type ThemeHealthRow = {
   stale: boolean
   empty: boolean
   noEdges: boolean
+  pendingCoverage: boolean
   shallow: boolean
   weightHygieneAdjusted: boolean
+  relationshipMapEligible: boolean | null
+  relationshipMapIneligibleReason: string | null
+  technicalConstituentCount: number | null
+  pricedConstituentCount: number | null
+  coverageRatio: number | null
 }
 
 type Rollup = {
   status: 'green' | 'yellow' | 'red' | 'gray'
   lastBuildLabel: string
   buildRanToday: boolean | null
+  expectedBuildWindowHours: number | null
   totalThemes: number
   activeThemes: number
   noEdges: number
   empty: number
   stale: number
+  pendingCoverage: number
   shallow: number
   weightHygieneAdjusted: number
   edgeSummary: string
@@ -145,7 +153,7 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
             <KpiCard
               label="Pipeline status"
               value={loading ? '...' : statusLabel(rollup.status)}
-              sub={loading ? 'Checking relationship-map source health' : `last build: ${rollup.lastBuildLabel}, ran today ${ranTodayLabel(rollup.buildRanToday)}`}
+              sub={loading ? 'Checking relationship-map source health' : `last build: ${rollup.lastBuildLabel}, ${buildFreshnessLabel(rollup.buildRanToday, rollup.expectedBuildWindowHours)}`}
               status={rollup.status}
             />
             <KpiCard
@@ -176,6 +184,7 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
               <span className="badge failed">no edges: {countLabel(rollup.noEdges, unavailable)}</span>
               <span className="badge failed">empty: {countLabel(rollup.empty, unavailable)}</span>
               <span className="badge running">stale: {countLabel(rollup.stale, unavailable)}</span>
+              <span className="badge running">pending coverage: {countLabel(rollup.pendingCoverage, unavailable)}</span>
               <span className="badge backend-gap">shallow: {countLabel(rollup.shallow, unavailable)}</span>
               <span className="badge backend-gap">weight hygiene adjusted: {countLabel(rollup.weightHygieneAdjusted, unavailable)}</span>
             </div>
@@ -192,6 +201,10 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
                     <th>ETF</th>
                     <th>Source</th>
                     <th>Holdings</th>
+                    <th>Technical</th>
+                    <th>Priced</th>
+                    <th>Coverage</th>
+                    <th>Eligibility</th>
                     <th>As of</th>
                     <th>Age</th>
                     <th>Flags</th>
@@ -201,12 +214,12 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td className="small" colSpan={8}>Loading relationship-map source health...</td>
+                      <td className="small" colSpan={12}>Loading relationship-map source health...</td>
                     </tr>
                   ) : null}
                   {!loading && sortedThemes.length === 0 ? (
                     <tr>
-                      <td className="small" colSpan={8}>
+                      <td className="small" colSpan={12}>
                         {error ? 'Relationship-map source health is unavailable.' : 'No relationship-map source health rows were returned.'}
                       </td>
                     </tr>
@@ -220,6 +233,13 @@ export function RelationshipMapHealthWorkspace({ adminEmail }: Props) {
                       <td>{theme.etf}</td>
                       <td>{theme.source}</td>
                       <td>{theme.holdingsCount === null ? '—' : theme.holdingsCount}</td>
+                      <td>{theme.technicalConstituentCount === null ? '—' : theme.technicalConstituentCount}</td>
+                      <td>{theme.pricedConstituentCount === null ? '—' : theme.pricedConstituentCount}</td>
+                      <td>{formatRatio(theme.coverageRatio)}</td>
+                      <td>
+                        {eligibilityLabel(theme)}
+                        {theme.relationshipMapIneligibleReason ? <div className="small">{theme.relationshipMapIneligibleReason}</div> : null}
+                      </td>
                       <td>{theme.holdingsAsOf ?? '—'}</td>
                       <td>{theme.ageDays === null ? '—' : `${theme.ageDays}d`}</td>
                       <td><FlagBadges theme={theme} /></td>
@@ -281,6 +301,7 @@ function FlagBadges({ theme }: { theme: ThemeHealthRow }) {
     theme.noEdges ? <span className="badge failed" key="no-edges">no edges</span> : null,
     theme.empty ? <span className="badge failed" key="empty">empty</span> : null,
     theme.stale ? <span className="badge running" key="stale">stale</span> : null,
+    theme.pendingCoverage ? <span className="badge running" key="pending-coverage">pending coverage</span> : null,
     theme.shallow ? <span className="badge backend-gap" key="shallow">shallow</span> : null,
     theme.weightHygieneAdjusted ? <span className="badge backend-gap" key="weight-hygiene">weight hygiene adjusted</span> : null,
   ].filter(Boolean)
@@ -303,6 +324,10 @@ function normalizeTheme(row: unknown): ThemeHealthRow | null {
   const active = readBoolean(record, ['active', 'is_active', 'isActive']) ?? true
   const shallow = readBoolean(record, ['holdings_shallow', 'holdingsShallow', 'shallow']) ?? hasFlag(record, 'shallow')
   const noEdges = readBoolean(record, ['no_edges', 'noEdges']) ?? hasFlag(record, 'no_edges') ?? hasFlag(record, 'no-edges')
+  const pendingCoverage = readBoolean(record, ['pendingCoverage', 'pending_coverage'])
+    ?? hasFlag(record, 'pendingCoverage')
+    ?? hasFlag(record, 'pending_coverage')
+    ?? hasFlag(record, 'pending-coverage')
   const empty = readBoolean(record, ['empty']) ?? hasFlag(record, 'empty') ?? (active && holdingsCount === 0)
   const stale = readBoolean(record, ['stale']) ?? hasFlag(record, 'stale')
   const weightHygieneAdjusted = readBoolean(record, ['weight_hygiene_adjusted', 'weightHygieneAdjusted'])
@@ -320,8 +345,14 @@ function normalizeTheme(row: unknown): ThemeHealthRow | null {
     stale,
     empty,
     noEdges,
+    pendingCoverage,
     shallow,
     weightHygieneAdjusted,
+    relationshipMapEligible: readBoolean(record, ['relationshipMapEligible', 'relationship_map_eligible']),
+    relationshipMapIneligibleReason: readString(record, ['relationshipMapIneligibleReason', 'relationship_map_ineligible_reason']),
+    technicalConstituentCount: readNumber(record, ['technicalConstituentCount', 'technical_constituent_count']),
+    pricedConstituentCount: readNumber(record, ['pricedConstituentCount', 'priced_constituent_count']),
+    coverageRatio: readNumber(record, ['coverageRatio', 'coverage_ratio']),
   }
 }
 
@@ -332,11 +363,13 @@ function buildRollup(payload: unknown, themes: ThemeHealthRow[]): Rollup {
       status: 'gray',
       lastBuildLabel: '—',
       buildRanToday: null,
+      expectedBuildWindowHours: null,
       totalThemes: 0,
       activeThemes: 0,
       noEdges: 0,
       empty: 0,
       stale: 0,
+      pendingCoverage: 0,
       shallow: 0,
       weightHygieneAdjusted: 0,
       edgeSummary: 'not returned by backend',
@@ -345,6 +378,7 @@ function buildRollup(payload: unknown, themes: ThemeHealthRow[]): Rollup {
 
   const rollupRecord = asRecord(record?.rollup) ?? asRecord(record?.summary) ?? null
   const pipelineRecord = asRecord(record?.pipeline)
+  const configRecord = asRecord(record?.config)
   const lastBuildRecord = asRecord(record?.lastBuild)
     ?? asRecord(record?.last_build)
     ?? asRecord(pipelineRecord?.lastBuild)
@@ -355,10 +389,14 @@ function buildRollup(payload: unknown, themes: ThemeHealthRow[]): Rollup {
     ?? asRecord(rollupRecord?.flagCounts)
     ?? asRecord(rollupRecord?.flag_counts)
     ?? asRecord(rollupRecord?.counts_by_flag)
+    ?? asRecord(record?.flagCounts)
+    ?? asRecord(record?.flag_counts)
+    ?? asRecord(record?.counts_by_flag)
 
   const noEdges = readCount(rollupRecord, countsRecord, ['no_edges', 'noEdges'], themes.filter((theme) => theme.noEdges).length)
   const empty = readCount(rollupRecord, countsRecord, ['empty'], themes.filter((theme) => theme.empty).length)
   const stale = readCount(rollupRecord, countsRecord, ['stale'], themes.filter((theme) => theme.stale).length)
+  const pendingCoverage = readCount(rollupRecord, countsRecord, ['pendingCoverage', 'pending_coverage'], themes.filter((theme) => theme.pendingCoverage).length)
   const shallow = readCount(rollupRecord, countsRecord, ['shallow', 'holdings_shallow', 'holdingsShallow'], themes.filter((theme) => theme.shallow).length)
   const weightHygieneAdjusted = readCount(
     rollupRecord,
@@ -370,17 +408,20 @@ function buildRollup(payload: unknown, themes: ThemeHealthRow[]): Rollup {
     ?? readBoolean(pipelineRecord ?? {}, ['buildRanToday', 'build_ran_today'])
     ?? readBoolean(lastBuildRecord ?? {}, ['buildRanToday', 'build_ran_today', 'ran_today'])
   const explicitStatus = normalizeStatus(readString(record, ['status']) ?? readString(rollupRecord, ['status']))
-  const status = explicitStatus ?? deriveStatus({ noEdges, empty, stale, shallow, weightHygieneAdjusted, buildRanToday })
+  const expectedBuildWindowHours = readNumber(configRecord, ['expectedBuildWindowHours', 'expected_build_window_hours'])
+  const status = explicitStatus ?? deriveStatus({ noEdges, empty, stale, pendingCoverage, shallow, weightHygieneAdjusted, buildRanToday })
 
   return {
     status,
     lastBuildLabel: formatLastBuild(lastBuildRecord, record),
     buildRanToday,
+    expectedBuildWindowHours,
     totalThemes: readCount(rollupRecord, countsRecord, ['themeCount', 'total_themes', 'totalThemes'], themes.length),
     activeThemes: readCount(rollupRecord, countsRecord, ['activeThemeCount', 'active_themes', 'activeThemes'], themes.filter((theme) => theme.active).length),
     noEdges,
     empty,
     stale,
+    pendingCoverage,
     shallow,
     weightHygieneAdjusted,
     edgeSummary: formatEdgeSummary(record),
@@ -397,7 +438,8 @@ function rowScore(theme: ThemeHealthRow): number {
   let score = 0
   if (theme.noEdges) score += 100
   if (theme.empty) score += 90
-  if (theme.stale) score += 40
+  if (theme.stale) score += 80
+  if (theme.pendingCoverage) score += 70
   if (theme.shallow) score += 20
   if (theme.weightHygieneAdjusted) score += 10
   if (!theme.active) score -= 10
@@ -408,6 +450,7 @@ function plainLanguage(theme: ThemeHealthRow): string {
   if (theme.noEdges) return 'No edges - this theme published nothing to the map.'
   if (theme.empty) return 'Empty - this active source has no holdings.'
   if (theme.stale) return `Stale - holdings are ${theme.ageDays === null ? 'older than expected' : `${theme.ageDays} days old`}.`
+  if (theme.pendingCoverage) return 'Pending coverage - ETF/theme is active, but not enough constituents have materialized price/technical coverage yet. It will become eligible automatically as coverage improves.'
   if (theme.shallow) return 'Shallow - holdings came from a truncated source.'
   if (theme.weightHygieneAdjusted) return 'Weight hygiene adjusted - edge weights were clamped or normalized.'
   if (!theme.active) return 'Inactive - not expected to publish relationship edges.'
@@ -421,10 +464,11 @@ function statusLabel(status: Rollup['status']): string {
   return 'Unknown'
 }
 
-function ranTodayLabel(value: boolean | null): string {
-  if (value === true) return '✔'
-  if (value === false) return '✘'
-  return 'unknown'
+function buildFreshnessLabel(value: boolean | null, expectedBuildWindowHours: number | null): string {
+  const windowLabel = expectedBuildWindowHours === null ? 'configured build window' : `${expectedBuildWindowHours}h window`
+  if (value === true) return `Fresh within ${windowLabel} ✔`
+  if (value === false) return `Outside ${windowLabel} ✘`
+  return expectedBuildWindowHours === null ? 'Build freshness unknown' : `Build freshness unknown for ${windowLabel}`
 }
 
 function countLabel(value: number, unavailable: boolean): string {
@@ -449,6 +493,7 @@ function deriveStatus({
   noEdges,
   empty,
   stale,
+  pendingCoverage,
   shallow,
   weightHygieneAdjusted,
   buildRanToday,
@@ -456,12 +501,13 @@ function deriveStatus({
   noEdges: number
   empty: number
   stale: number
+  pendingCoverage: number
   shallow: number
   weightHygieneAdjusted: number
   buildRanToday: boolean | null
 }): Rollup['status'] {
   if (noEdges > 0 || empty > 0 || buildRanToday === false) return 'red'
-  if (stale > 0 || shallow > 0 || weightHygieneAdjusted > 0) return 'yellow'
+  if (stale > 0 || pendingCoverage > 0 || shallow > 0 || weightHygieneAdjusted > 0) return 'yellow'
   return 'green'
 }
 
@@ -487,6 +533,18 @@ function formatDateTime(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString()
+}
+
+function formatRatio(value: number | null): string {
+  if (value === null) return '—'
+  if (value <= 1) return `${Math.round(value * 100)}%`
+  return `${Math.round(value)}%`
+}
+
+function eligibilityLabel(theme: ThemeHealthRow): string {
+  if (theme.relationshipMapEligible === true) return 'Eligible'
+  if (theme.relationshipMapEligible === false) return 'Not eligible'
+  return 'Unknown'
 }
 
 function formatEdgeSummary(payload: RowRecord | null): string {
@@ -554,12 +612,13 @@ function readBoolean(record: RowRecord | null | undefined, keys: string[]): bool
 }
 
 function hasFlag(record: RowRecord, flag: string): boolean {
+  const normalizedFlag = flag.trim().toLowerCase()
   const flags = record.flags
   if (Array.isArray(flags)) {
-    return flags.map((item) => String(item).trim().toLowerCase()).includes(flag)
+    return flags.map((item) => String(item).trim().toLowerCase()).includes(normalizedFlag)
   }
   const flagRecord = asRecord(flags)
-  return readBoolean(flagRecord, [flag]) ?? false
+  return readBoolean(flagRecord, [flag, normalizedFlag]) ?? false
 }
 
 function rowKey(theme: ThemeHealthRow, index: number): string {
