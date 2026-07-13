@@ -1,4 +1,11 @@
 import { PREFECT_FALLBACK_UI_URL, type PrefectOverview } from '@/lib/prefect-overview'
+import {
+  deploymentLastRunLabel,
+  deploymentLastStateLabel,
+  deploymentNextRunLabel,
+  formatPrefectDateTime,
+  scheduledRunStateLabel,
+} from '@/lib/prefect-labels'
 
 type OperationsWorkspaceProps = {
   adminEmail: string
@@ -92,9 +99,9 @@ export default function OperationsWorkspace({ adminEmail, overview, loadError }:
                           {deployment.displayName && deployment.displayName !== deployment.name ? <div className="small">{deployment.name}</div> : null}
                         </td>
                         <td>{deployment.workPoolName || 'unknown'}</td>
-                        <td>{formatDateTime(deployment.nextRunAt)}</td>
-                        <td><span className={statusBadgeClass(deployment.lastRunState)}>{deployment.lastRunState || 'unknown'}</span></td>
-                        <td>{formatDateTime(deployment.lastRunAt)}</td>
+                        <td>{deploymentNextRunLabel(deployment.nextRunAt)}</td>
+                        <td><span className={statusBadgeClass(deployment.lastRunState)}>{deploymentLastStateLabel(deployment.lastRunState)}</span></td>
+                        <td>{deploymentLastRunLabel(deployment.lastRunAt)}</td>
                         <td><ExternalLink href={deployment.url} label="Open" /></td>
                       </tr>
                     ))}
@@ -123,8 +130,8 @@ export default function OperationsWorkspace({ adminEmail, overview, loadError }:
                       <tr key={`${run.name}-${run.deploymentName}-${run.expectedStartTime}`}>
                         <td>{run.name || 'unnamed run'}</td>
                         <td>{run.deploymentName || 'unknown'}</td>
-                        <td>{formatDateTime(run.expectedStartTime)}</td>
-                        <td><span className={statusBadgeClass(run.stateName)}>{run.stateName || 'unknown'}</span></td>
+                        <td>{formatPrefectDateTime(run.expectedStartTime, 'Not scheduled')}</td>
+                        <td><span className={statusBadgeClass(scheduledRunStateLabel(run.stateName, run.expectedStartTime))}>{scheduledRunStateLabel(run.stateName, run.expectedStartTime)}</span></td>
                         <td><ExternalLink href={run.url} label="Open" /></td>
                       </tr>
                     ))}
@@ -170,8 +177,8 @@ export default function OperationsWorkspace({ adminEmail, overview, loadError }:
                         <td>{run.name || 'unnamed run'}</td>
                         <td>{run.deploymentName || 'unknown'}</td>
                         <td><span className={statusBadgeClass(run.stateName)}>{run.stateName || 'unknown'}</span></td>
-                        <td>{formatDateTime(run.startTime)}</td>
-                        <td>{formatDateTime(run.endTime)}</td>
+                        <td>{formatPrefectDateTime(run.startTime, 'not started')}</td>
+                        <td>{formatPrefectDateTime(run.endTime, 'not finished')}</td>
                         <td><ExternalLink href={run.url} label="Open" /></td>
                       </tr>
                     ))}
@@ -211,13 +218,6 @@ function EmptyState({ label }: { label: string }) {
 function ExternalLink({ href, label }: { href: string; label: string }) {
   if (!href) return <span className="small">No link</span>
   return <a className="text-link" href={href} rel="noreferrer" target="_blank">{label}</a>
-}
-
-function formatDateTime(value: string): string {
-  if (!value) return 'not scheduled'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
 }
 
 function statusBadgeClass(status: string): string {

@@ -6,6 +6,12 @@ import {
   normalizePrefectOverview,
   PREFECT_OVERVIEW_PATH,
 } from '../lib/prefect-overview'
+import {
+  deploymentLastRunLabel,
+  deploymentLastStateLabel,
+  deploymentNextRunLabel,
+  scheduledRunStateLabel,
+} from '../lib/prefect-labels'
 
 test('prefect overview client loads normal response with backend links', async () => {
   const originalBaseUrl = process.env.BACKEND_BASE_URL
@@ -133,4 +139,12 @@ test('operations page does not expose mutable Prefect actions', () => {
   for (const forbidden of ['run now', 'retry', 'resume', 'cancel run', 'edit schedule']) {
     assert.equal(source.includes(forbidden), false, `unexpected mutable action label: ${forbidden}`)
   }
+})
+
+test('prefect operations labels distinguish empty scheduled and run-history fields', () => {
+  assert.equal(scheduledRunStateLabel('', '2026-07-14T01:00:00Z'), 'Scheduled')
+  assert.equal(scheduledRunStateLabel('', ''), 'unknown')
+  assert.equal(deploymentLastStateLabel(''), 'No runs yet')
+  assert.equal(deploymentLastRunLabel(''), 'No runs yet')
+  assert.equal(deploymentNextRunLabel(''), 'Not scheduled')
 })
