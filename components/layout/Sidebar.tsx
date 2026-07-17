@@ -81,6 +81,7 @@ export function Sidebar({ health, candidateCount, loadStatus = false }: Props) {
       label: 'DATA',
       items: [
         { label: 'Data', href: '/data', dot: sidebarHealth.data },
+        { label: 'Entity Layer', href: '/entity-layer', dot: 'gray' },
       ],
     },
     {

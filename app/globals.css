@@ -722,6 +722,103 @@ button:disabled {
   color: #fff;
 }
 
+.entity-layer-workspace h2 {
+  margin-top: 0;
+}
+
+.entity-layer-header-meta {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.entity-layer-refresh {
+  width: auto;
+  min-width: 96px;
+}
+
+.entity-layer-metric-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.entity-layer-three-column {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.entity-layer-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.entity-layer-breakdown {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dbe3f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.entity-layer-breakdown h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.entity-layer-breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 13px;
+}
+
+.entity-layer-breakdown-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.entity-layer-breakdown-row span {
+  overflow-wrap: anywhere;
+}
+
+.entity-layer-breakdown-row small {
+  grid-column: 1 / -1;
+  color: #64748b;
+}
+
+.entity-layer-table {
+  min-width: 980px;
+}
+
+.entity-layer-listing-list {
+  display: grid;
+  gap: 8px;
+}
+
+.entity-layer-query {
+  display: grid;
+  grid-template-columns: 180px minmax(240px, 1fr) 120px;
+  gap: 12px;
+  align-items: end;
+  margin: 16px 0;
+}
+
+.entity-layer-query-action {
+  min-width: 0;
+}
+
+.entity-layer-drilldown {
+  margin-top: 12px;
+}
+
 .relationship-map-filter-bar {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));
@@ -2757,6 +2854,10 @@ details summary {
   .relationship-map-coverage-grid,
   .relationship-map-frontier-grid,
   .relationship-map-frontier-toolbar,
+  .entity-layer-metric-grid,
+  .entity-layer-three-column,
+  .entity-layer-two-column,
+  .entity-layer-query,
   .month-toolbar,
   .coverage-summary,
   .data-range-form,
