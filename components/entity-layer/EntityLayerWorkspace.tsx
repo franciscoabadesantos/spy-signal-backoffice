@@ -717,13 +717,15 @@ function normalizeTailRows(payload: unknown): TailRow[] {
       const record = asRecord(row) ?? {}
       const listing = firstRecord(record, ['listing']) ?? record
       const isMulti = readBool(record, ['multi_listing', 'is_multi_listing', 'multiListing', 'isMultiListing'])
+      const reason = readString(record, ['reason', 'reason_bucket', 'reasonBucket', 'unresolved_reason']) ?? '-'
+      const resolutionStatus = readString(record, ['status', 'resolution_status', 'resolutionStatus'])
       return {
         symbol: readString(listing, ['symbol', 'ticker']) ?? '-',
         exchange: readString(listing, ['exchange', 'mic', 'venue']) ?? '',
         isin: readString(listing, ['isin', 'listing_isin', 'listingIsin']) ?? '',
-        status: (readString(record, ['status', 'resolution_status', 'resolutionStatus']) ?? 'unresolved').toLowerCase(),
+        status: (resolutionStatus ?? (reason === 'provisional_only' ? 'provisional' : 'unresolved')).toLowerCase(),
         segment: readString(record, ['segment', 'listing_segment', 'listingSegment']) ?? (isMulti ? 'multi-listing' : 'single-listing'),
-        reason: readString(record, ['reason', 'reason_bucket', 'reasonBucket', 'unresolved_reason']) ?? '-',
+        reason,
         importanceBucket: readString(record, ['importance_bucket', 'importanceBucket', 'importance']) ?? '-',
         marketCap: formatValue(firstValue(record, ['providerMarketCap', 'provider_market_cap', 'localMarketCap', 'local_market_cap', 'market_cap', 'marketCap', 'market_cap_usd', 'marketCapUsd'])),
       }
@@ -737,10 +739,10 @@ function normalizeSourceHealth(payload: unknown): SourceHealthRow[] {
     const record = asRecord(row) ?? {}
     const counts = firstRecord(record, ['counts', 'summary', 'totals']) ?? record
     const source = readString(record, ['source', 'name', 'provider', 'cache']) ?? 'unknown'
-    const successCount = readMetricCount(counts, ['success', 'success_count', 'successCount', 'ok', 'okCount']) ?? 0
-    const notFoundCount = readMetricCount(counts, ['not_found', 'notFound', 'not_found_count', 'notFoundCount']) ?? 0
-    const errorCount = readMetricCount(counts, ['error', 'errors', 'error_count', 'errorCount']) ?? 0
-    const gapCount = readMetricCount(counts, ['gap', 'gaps', 'gap_count', 'gapCount']) ?? 0
+    const successCount = readMetricCount(counts, ['success', 'success_count', 'successCount', 'cached_success', 'cachedSuccess', 'ok', 'okCount']) ?? 0
+    const notFoundCount = readMetricCount(counts, ['not_found', 'notFound', 'not_found_count', 'notFoundCount', 'cached_not_found', 'cachedNotFound']) ?? 0
+    const errorCount = readMetricCount(counts, ['error', 'errors', 'error_count', 'errorCount', 'cached_error', 'cachedError']) ?? 0
+    const gapCount = readMetricCount(counts, ['gap', 'gaps', 'gap_count', 'gapCount', 'cache_gaps', 'cacheGaps']) ?? 0
     const totalCount = readMetricCount(counts, ['total', 'total_count', 'totalCount', 'sample_count', 'sampleCount'])
       ?? successCount + notFoundCount + errorCount + gapCount
     return {
@@ -750,7 +752,7 @@ function normalizeSourceHealth(payload: unknown): SourceHealthRow[] {
       errorCount,
       gapCount,
       totalCount,
-      samples: normalizeStrings(firstValue(record, ['samples', 'sample', 'examples', 'gaps_sample', 'gapSamples'])),
+      samples: normalizeStrings(firstValue(record, ['samples', 'sample', 'examples', 'gaps_sample', 'gapSamples', 'sample_gaps', 'sampleGaps'])),
     }
   })
 }
