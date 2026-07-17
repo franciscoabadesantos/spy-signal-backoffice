@@ -157,7 +157,7 @@ export function EntityLayerWorkspace({ adminEmail }: Props) {
 
       <CoverageSummaryPanel loading={state.loading} summary={summary} />
       <DedupPanel groups={dedupGroups} loading={state.loading} payload={state.dedup} />
-      <TailPanel loading={state.loading} rows={tailRows} summaryPayload={state.summary} tailPayload={state.tail} />
+      <TailPanel loading={state.loading} rows={tailRows} tailPayload={state.tail} />
       <SourceHealthPanel loading={state.loading} rows={sourceHealth} payload={state.sourceHealth} />
 
       <section className="card">
@@ -278,20 +278,21 @@ function DedupPanel({ groups, loading, payload }: { groups: DedupGroup[]; loadin
 function TailPanel({
   loading,
   rows,
-  summaryPayload,
   tailPayload,
 }: {
   loading: boolean
   rows: TailRow[]
-  summaryPayload: unknown
   tailPayload: unknown
 }) {
   const unresolvedMulti = readNumberFromAny(
-    [summaryPayload, tailPayload],
+    [tailPayload],
     ['unresolvedMultiListingEntitiesCount', 'unresolved_multi_listing_entities_count', 'unresolved_multi_listing_count']
   )
-  const reasonRows = bucketRows(rows, (row) => row.reason)
-  const segmentRows = bucketRows(rows, (row) => row.segment)
+  const tailSummary = firstRecord(asRecord(tailPayload), ['summary']) ?? asRecord(tailPayload)
+  const reasonRows = normalizeBreakdown(firstValue(tailSummary, ['reasons', 'reasonBuckets', 'reason_buckets']))
+  const segmentRows = normalizeBreakdown(firstValue(tailSummary, ['segments', 'segmentBuckets', 'segment_buckets']))
+  const displayReasonRows = reasonRows.length > 0 ? reasonRows : bucketRows(rows, (row) => row.reason)
+  const displaySegmentRows = segmentRows.length > 0 ? segmentRows : bucketRows(rows, (row) => row.segment)
 
   return (
     <section className="card">
@@ -309,8 +310,8 @@ function TailPanel({
       </div>
 
       <div className="entity-layer-two-column">
-        <BreakdownBlock title="Reason buckets" rows={reasonRows} />
-        <BreakdownBlock title="Segment" rows={segmentRows} />
+        <BreakdownBlock title="Reason buckets" rows={displayReasonRows} />
+        <BreakdownBlock title="Segment" rows={displaySegmentRows} />
       </div>
 
       <div className="table-wrap">
@@ -322,7 +323,7 @@ function TailPanel({
               <th>Segment</th>
               <th>Reason</th>
               <th>Importance</th>
-              <th>Market cap</th>
+              <th>Provider/local market cap</th>
             </tr>
           </thead>
           <tbody>
@@ -657,20 +658,25 @@ type ReviewRow = {
 }
 
 function normalizeSummary(payload: unknown) {
-  const root = mainRecord(payload, ['summary', 'coverage', 'data'])
-  const countRoot = firstRecord(root, ['counts', 'coverage_counts', 'coverageCounts']) ?? root
+  const top = asRecord(payload) ?? {}
+  const summary = firstRecord(top, ['summary', 'coverage', 'data']) ?? {}
+  const countRoot = firstRecord(top, ['counts'])
+    ?? firstRecord(summary, ['counts', 'coverage_counts', 'coverageCounts'])
+    ?? top
   const availability = availabilityFor(payload)
-  const entityMasterCount = readNumber(countRoot, ['entity_master_count', 'entityMasterCount', 'entities_count', 'entity_count', 'entities'])
-  const listingCount = readNumber(countRoot, ['listing_count', 'listings_count', 'listingCount', 'listings'])
-  const resolvedCount = readNumber(countRoot, ['resolved_count', 'resolvedCount', 'resolved'])
-  const provisionalCount = readNumber(countRoot, ['provisional_count', 'provisionalCount', 'provisional'])
-  const unresolvedCount = readNumber(countRoot, ['unresolved_count', 'unresolvedCount', 'unresolved'])
+  const entityMasterCount = readNumber(countRoot, ['entityMasterCount', 'entity_master_count', 'entities_count', 'entity_count', 'entities'])
+  const listingCount = readNumber(countRoot, ['entityListingCount', 'entity_listing_count', 'listing_count', 'listings_count', 'listingCount', 'listings'])
+  const resolvedCount = readNumber(countRoot, ['resolvedCount', 'resolved_count', 'resolved'])
+  const provisionalCount = readNumber(countRoot, ['provisionalCount', 'provisional_count', 'provisional'])
+  const unresolvedCount = readNumber(countRoot, ['unresolvedCount', 'unresolved_count', 'unresolved'])
   const statusTotal = listingCount ?? sumNumbers([resolvedCount, provisionalCount, unresolvedCount])
 
   return {
     availability,
-    scope: readString(root, ['scope', 'universe', 'as_of_scope']) ?? 'scope unavailable',
-    batchId: readString(root, ['batchId', 'batch_id', 'batch']) ?? readString(firstRecord(root, ['batch']), ['id', 'batch_id']) ?? '-',
+    scope: readStringFromRecords([top, summary], ['scopeKey', 'scope_key', 'scope', 'universe', 'as_of_scope']) ?? 'scope unavailable',
+    batchId: readStringFromRecords([top, summary], ['batchId', 'batch_id', 'batch'])
+      ?? readString(firstRecord(top, ['batch']) ?? firstRecord(summary, ['batch']), ['id', 'batchId', 'batch_id'])
+      ?? '-',
     entityMasterCount: formatCount(entityMasterCount),
     listingCount: formatCount(listingCount),
     resolvedCount: formatCount(resolvedCount),
@@ -679,9 +685,9 @@ function normalizeSummary(payload: unknown) {
     resolvedPercent: percentSubLabel(resolvedCount, statusTotal, 'attached listings'),
     provisionalPercent: percentSubLabel(provisionalCount, statusTotal, 'needs stronger evidence'),
     unresolvedPercent: percentSubLabel(unresolvedCount, statusTotal, 'no entity assignment'),
-    attachMethods: normalizeBreakdown(firstValue(root, ['attach_method_breakdown', 'attachMethodBreakdown', 'attach_methods', 'attachMethods', 'attach_method_counts'])),
-    confidenceDistribution: normalizeBreakdown(firstValue(root, ['confidence_distribution', 'confidenceDistribution', 'confidence_counts', 'confidence'])),
-    batchTrend: normalizeTrend(firstValue(root, ['batch_trend', 'batchTrend', 'trend', 'batches'])),
+    attachMethods: normalizeBreakdown(firstValueFromRecords([top, summary], ['methods', 'attach_method_breakdown', 'attachMethodBreakdown', 'attach_methods', 'attachMethods', 'attach_method_counts'])),
+    confidenceDistribution: normalizeBreakdown(firstValueFromRecords([top, summary], ['confidence', 'confidence_distribution', 'confidenceDistribution', 'confidence_counts'])),
+    batchTrend: normalizeTrend(firstValueFromRecords([top, summary], ['batchTrend', 'batch_trend', 'trend', 'batches'])),
   }
 }
 
@@ -719,27 +725,23 @@ function normalizeTailRows(payload: unknown): TailRow[] {
         segment: readString(record, ['segment', 'listing_segment', 'listingSegment']) ?? (isMulti ? 'multi-listing' : 'single-listing'),
         reason: readString(record, ['reason', 'reason_bucket', 'reasonBucket', 'unresolved_reason']) ?? '-',
         importanceBucket: readString(record, ['importance_bucket', 'importanceBucket', 'importance']) ?? '-',
-        marketCap: formatValue(firstValue(record, ['market_cap', 'marketCap', 'market_cap_usd', 'marketCapUsd'])),
+        marketCap: formatValue(firstValue(record, ['providerMarketCap', 'provider_market_cap', 'localMarketCap', 'local_market_cap', 'market_cap', 'marketCap', 'market_cap_usd', 'marketCapUsd'])),
       }
     })
 }
 
 function normalizeSourceHealth(payload: unknown): SourceHealthRow[] {
-  const rows = firstList<RowRecord>(payload, ['sources', 'rows', 'source_health', 'sourceHealth', 'results', 'items', 'data'])
-  const healthRecords = rows.length > 0 ? rows : sourceLabels.flatMap((label) => {
-    const root = mainRecord(payload, ['health', 'source_health', 'sourceHealth', 'data'])
-    const record = asRecord(root[label]) ?? asRecord(root[slugKey(label)]) ?? asRecord(root[label.toLowerCase()])
-    return record ? [{ source: label, ...record }] : []
-  })
+  const healthRecords = sourceHealthRecords(payload)
 
   return healthRecords.map((row) => {
     const record = asRecord(row) ?? {}
+    const counts = firstRecord(record, ['counts', 'summary', 'totals']) ?? record
     const source = readString(record, ['source', 'name', 'provider', 'cache']) ?? 'unknown'
-    const successCount = readNumber(record, ['success', 'success_count', 'successCount', 'ok']) ?? 0
-    const notFoundCount = readNumber(record, ['not_found', 'notFound', 'not_found_count', 'notFoundCount']) ?? 0
-    const errorCount = readNumber(record, ['error', 'errors', 'error_count', 'errorCount']) ?? 0
-    const gapCount = readNumber(record, ['gap', 'gaps', 'gap_count', 'gapCount']) ?? 0
-    const totalCount = readNumber(record, ['total', 'total_count', 'totalCount', 'sample_count', 'sampleCount'])
+    const successCount = readMetricCount(counts, ['success', 'success_count', 'successCount', 'ok', 'okCount']) ?? 0
+    const notFoundCount = readMetricCount(counts, ['not_found', 'notFound', 'not_found_count', 'notFoundCount']) ?? 0
+    const errorCount = readMetricCount(counts, ['error', 'errors', 'error_count', 'errorCount']) ?? 0
+    const gapCount = readMetricCount(counts, ['gap', 'gaps', 'gap_count', 'gapCount']) ?? 0
+    const totalCount = readMetricCount(counts, ['total', 'total_count', 'totalCount', 'sample_count', 'sampleCount'])
       ?? successCount + notFoundCount + errorCount + gapCount
     return {
       source: normalizeSourceLabel(source),
@@ -750,6 +752,26 @@ function normalizeSourceHealth(payload: unknown): SourceHealthRow[] {
       totalCount,
       samples: normalizeStrings(firstValue(record, ['samples', 'sample', 'examples', 'gaps_sample', 'gapSamples'])),
     }
+  })
+}
+
+function sourceHealthRecords(payload: unknown): RowRecord[] {
+  const listRows = firstList<RowRecord>(payload, ['sources', 'rows', 'source_health', 'sourceHealth', 'results', 'items', 'data'])
+  if (listRows.length > 0) return listRows
+
+  const top = asRecord(payload) ?? {}
+  const root = mainRecord(payload, ['health', 'source_health', 'sourceHealth', 'data'])
+  const sourceObject = asRecord(top.sources) ?? asRecord(root.sources)
+  if (sourceObject) {
+    const keyedRows = Object.entries(sourceObject)
+      .filter(([, value]) => Boolean(asRecord(value)))
+      .map(([source, value]) => ({ source, ...(asRecord(value) ?? {}) }))
+    if (keyedRows.length > 0) return keyedRows
+  }
+
+  return sourceLabels.flatMap((label) => {
+    const record = asRecord(root[label]) ?? asRecord(root[slugKey(label)]) ?? asRecord(root[label.toLowerCase()])
+    return record ? [{ source: label, ...record }] : []
   })
 }
 
@@ -820,12 +842,12 @@ function normalizeBreakdown(value: unknown): CountRow[] {
   const record = asRecord(value)
   if (!record) return []
   const entries = Object.entries(record)
-  const numericValues = entries.map(([, raw]) => readNumericValue(raw))
+  const numericValues = entries.map(([, raw]) => breakdownCount(raw))
   const total = sumNumbers(numericValues)
   return entries.map(([label, raw], index) => ({
-    label,
-    value: formatValue(raw),
-    detail: formatPercent(numericValues[index], total),
+    label: readString(asRecord(raw), ['label', 'bucket', 'method', 'name', 'key']) ?? label,
+    value: formatCount(numericValues[index]) !== '-' ? formatCount(numericValues[index]) : formatValue(raw),
+    detail: readPercent(asRecord(raw), ['share', 'pct', 'percent', 'ratio']) ?? formatPercent(numericValues[index], total),
   }))
 }
 
@@ -835,8 +857,8 @@ function normalizeTrend(value: unknown): CountRow[] {
       const record = asRecord(item)
       return {
         label: readString(record, ['batch_id', 'batchId', 'batch', 'date']) ?? `batch ${index + 1}`,
-        value: formatCount(readNumber(record, ['listing_count', 'listings', 'entity_count', 'entities', 'count'])),
-        detail: readString(record, ['status', 'availability', 'scope']) ?? undefined,
+        value: formatCount(readNumber(record, ['entityListingCount', 'entity_listing_count', 'listing_count', 'listings', 'entity_count', 'entities', 'count'])),
+        detail: readString(record, ['status', 'availability', 'scopeKey', 'scope']) ?? undefined,
       }
     })
   }
@@ -859,8 +881,24 @@ function bucketRows<T>(rows: T[], keyFn: (row: T) => string): CountRow[] {
 
 function availabilityFor(payload: unknown): AvailabilityState {
   const record = asRecord(payload)
-  const availability = asRecord(record?.availability)
+  const rawAvailability = firstValueFromRecords([record, firstRecord(record, ['summary', 'data'])], ['availability', 'available'])
+  const availability = asRecord(rawAvailability)
   if (!availability) {
+    if (typeof rawAvailability === 'string' && rawAvailability.trim()) {
+      const inferred = inferAvailability(rawAvailability)
+      return {
+        label: inferred === false ? 'degraded' : inferred === true ? 'available' : rawAvailability,
+        available: inferred,
+        detail: rawAvailability,
+      }
+    }
+    if (typeof rawAvailability === 'boolean') {
+      return {
+        label: rawAvailability ? 'available' : 'degraded',
+        available: rawAvailability,
+        detail: rawAvailability ? 'available' : 'unavailable',
+      }
+    }
     return { label: 'availability unknown', available: null, detail: 'availability not returned' }
   }
 
@@ -918,12 +956,28 @@ function firstValue(record: RowRecord | null | undefined, keys: string[]): unkno
   return undefined
 }
 
+function firstValueFromRecords(records: Array<RowRecord | null | undefined>, keys: string[]): unknown {
+  for (const record of records) {
+    const value = firstValue(record, keys)
+    if (value !== undefined) return value
+  }
+  return undefined
+}
+
 function readString(record: RowRecord | null | undefined, keys: string[]): string | null {
   if (!record) return null
   for (const key of keys) {
     const value = record[key]
     if (typeof value === 'string' && value.trim()) return value.trim()
     if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  }
+  return null
+}
+
+function readStringFromRecords(records: Array<RowRecord | null | undefined>, keys: string[]): string | null {
+  for (const record of records) {
+    const value = readString(record, keys)
+    if (value !== null) return value
   }
   return null
 }
@@ -938,10 +992,30 @@ function readNumber(record: RowRecord | null | undefined, keys: string[]): numbe
   return null
 }
 
+function readMetricCount(record: RowRecord | null | undefined, keys: string[]): number | null {
+  if (!record) return null
+  for (const key of keys) {
+    const value = record[key]
+    if (Array.isArray(value)) return value.length
+    const numberValue = readNumericValue(value)
+    if (numberValue !== null) return numberValue
+  }
+  return null
+}
+
 function readNumberFromAny(payloads: unknown[], keys: string[]): number | null {
   for (const payload of payloads) {
-    const root = mainRecord(payload, ['summary', 'tail', 'data'])
-    const value = readNumber(root, keys)
+    const top = asRecord(payload) ?? {}
+    const summary = firstRecord(top, ['summary', 'tail', 'data'])
+    const value = readNumberFromRecords([top, summary], keys)
+    if (value !== null) return value
+  }
+  return null
+}
+
+function readNumberFromRecords(records: Array<RowRecord | null | undefined>, keys: string[]): number | null {
+  for (const record of records) {
+    const value = readNumber(record, keys)
     if (value !== null) return value
   }
   return null
@@ -965,6 +1039,13 @@ function readNumericValue(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
   return null
+}
+
+function breakdownCount(value: unknown): number | null {
+  const direct = readNumericValue(value)
+  if (direct !== null) return direct
+  const record = asRecord(value)
+  return readNumber(record, ['count', 'value', 'total'])
 }
 
 function readPercent(record: RowRecord | null | undefined, keys: string[]): string | undefined {
