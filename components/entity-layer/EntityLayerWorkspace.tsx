@@ -212,9 +212,9 @@ function CoverageSummaryPanel({ loading, summary }: { loading: boolean; summary:
         <KpiCard label="Batch" value={loading ? '...' : summary.batchId} sub={summary.scope} />
         <KpiCard label="Entity master" value={loading ? '...' : summary.entityMasterCount} sub="master records" />
         <KpiCard label="Listings" value={loading ? '...' : summary.listingCount} sub="entity listings" />
-        <KpiCard label="Resolved" value={loading ? '...' : summary.resolvedCount} sub="attached listings" status="completed" />
-        <KpiCard label="Provisional" value={loading ? '...' : summary.provisionalCount} sub="needs stronger evidence" status="running" />
-        <KpiCard label="Unresolved" value={loading ? '...' : summary.unresolvedCount} sub="no entity assignment" status={summary.unresolvedCount === '0' ? 'completed' : 'failed'} />
+        <KpiCard label="Resolved" value={loading ? '...' : summary.resolvedCount} sub={summary.resolvedPercent} status="completed" />
+        <KpiCard label="Provisional" value={loading ? '...' : summary.provisionalCount} sub={summary.provisionalPercent} status="running" />
+        <KpiCard label="Unresolved" value={loading ? '...' : summary.unresolvedCount} sub={summary.unresolvedPercent} status={summary.unresolvedCount === '0' ? 'completed' : 'failed'} />
       </div>
 
       <div className="entity-layer-three-column">
@@ -377,10 +377,10 @@ function SourceHealthPanel({ loading, rows, payload }: { loading: boolean; rows:
             {!loading ? rows.map((row) => (
               <tr className={row.errorCount > 0 || row.gapCount > 0 ? 'danger-row' : undefined} key={row.source}>
                 <td><strong>{row.source}</strong></td>
-                <td>{row.successCount}</td>
-                <td>{row.notFoundCount}</td>
-                <td>{row.errorCount}</td>
-                <td>{row.gapCount}</td>
+                <td>{formatCountWithPercent(row.successCount, row.totalCount)}</td>
+                <td>{formatCountWithPercent(row.notFoundCount, row.totalCount)}</td>
+                <td>{formatCountWithPercent(row.errorCount, row.totalCount)}</td>
+                <td>{formatCountWithPercent(row.gapCount, row.totalCount)}</td>
                 <td><SampleList samples={row.samples} /></td>
               </tr>
             )) : null}
@@ -633,6 +633,7 @@ type SourceHealthRow = {
   notFoundCount: number
   errorCount: number
   gapCount: number
+  totalCount: number
   samples: string[]
 }
 
@@ -659,16 +660,25 @@ function normalizeSummary(payload: unknown) {
   const root = mainRecord(payload, ['summary', 'coverage', 'data'])
   const countRoot = firstRecord(root, ['counts', 'coverage_counts', 'coverageCounts']) ?? root
   const availability = availabilityFor(payload)
+  const entityMasterCount = readNumber(countRoot, ['entity_master_count', 'entityMasterCount', 'entities_count', 'entity_count', 'entities'])
+  const listingCount = readNumber(countRoot, ['listing_count', 'listings_count', 'listingCount', 'listings'])
+  const resolvedCount = readNumber(countRoot, ['resolved_count', 'resolvedCount', 'resolved'])
+  const provisionalCount = readNumber(countRoot, ['provisional_count', 'provisionalCount', 'provisional'])
+  const unresolvedCount = readNumber(countRoot, ['unresolved_count', 'unresolvedCount', 'unresolved'])
+  const statusTotal = listingCount ?? sumNumbers([resolvedCount, provisionalCount, unresolvedCount])
 
   return {
     availability,
     scope: readString(root, ['scope', 'universe', 'as_of_scope']) ?? 'scope unavailable',
     batchId: readString(root, ['batchId', 'batch_id', 'batch']) ?? readString(firstRecord(root, ['batch']), ['id', 'batch_id']) ?? '-',
-    entityMasterCount: formatCount(readNumber(countRoot, ['entity_master_count', 'entityMasterCount', 'entities_count', 'entity_count', 'entities'])),
-    listingCount: formatCount(readNumber(countRoot, ['listing_count', 'listings_count', 'listingCount', 'listings'])),
-    resolvedCount: formatCount(readNumber(countRoot, ['resolved_count', 'resolvedCount', 'resolved'])),
-    provisionalCount: formatCount(readNumber(countRoot, ['provisional_count', 'provisionalCount', 'provisional'])),
-    unresolvedCount: formatCount(readNumber(countRoot, ['unresolved_count', 'unresolvedCount', 'unresolved'])),
+    entityMasterCount: formatCount(entityMasterCount),
+    listingCount: formatCount(listingCount),
+    resolvedCount: formatCount(resolvedCount),
+    provisionalCount: formatCount(provisionalCount),
+    unresolvedCount: formatCount(unresolvedCount),
+    resolvedPercent: percentSubLabel(resolvedCount, statusTotal, 'attached listings'),
+    provisionalPercent: percentSubLabel(provisionalCount, statusTotal, 'needs stronger evidence'),
+    unresolvedPercent: percentSubLabel(unresolvedCount, statusTotal, 'no entity assignment'),
     attachMethods: normalizeBreakdown(firstValue(root, ['attach_method_breakdown', 'attachMethodBreakdown', 'attach_methods', 'attachMethods', 'attach_method_counts'])),
     confidenceDistribution: normalizeBreakdown(firstValue(root, ['confidence_distribution', 'confidenceDistribution', 'confidence_counts', 'confidence'])),
     batchTrend: normalizeTrend(firstValue(root, ['batch_trend', 'batchTrend', 'trend', 'batches'])),
@@ -725,12 +735,19 @@ function normalizeSourceHealth(payload: unknown): SourceHealthRow[] {
   return healthRecords.map((row) => {
     const record = asRecord(row) ?? {}
     const source = readString(record, ['source', 'name', 'provider', 'cache']) ?? 'unknown'
+    const successCount = readNumber(record, ['success', 'success_count', 'successCount', 'ok']) ?? 0
+    const notFoundCount = readNumber(record, ['not_found', 'notFound', 'not_found_count', 'notFoundCount']) ?? 0
+    const errorCount = readNumber(record, ['error', 'errors', 'error_count', 'errorCount']) ?? 0
+    const gapCount = readNumber(record, ['gap', 'gaps', 'gap_count', 'gapCount']) ?? 0
+    const totalCount = readNumber(record, ['total', 'total_count', 'totalCount', 'sample_count', 'sampleCount'])
+      ?? successCount + notFoundCount + errorCount + gapCount
     return {
       source: normalizeSourceLabel(source),
-      successCount: readNumber(record, ['success', 'success_count', 'successCount', 'ok']) ?? 0,
-      notFoundCount: readNumber(record, ['not_found', 'notFound', 'not_found_count', 'notFoundCount']) ?? 0,
-      errorCount: readNumber(record, ['error', 'errors', 'error_count', 'errorCount']) ?? 0,
-      gapCount: readNumber(record, ['gap', 'gaps', 'gap_count', 'gapCount']) ?? 0,
+      successCount,
+      notFoundCount,
+      errorCount,
+      gapCount,
+      totalCount,
       samples: normalizeStrings(firstValue(record, ['samples', 'sample', 'examples', 'gaps_sample', 'gapSamples'])),
     }
   })
@@ -784,21 +801,31 @@ function normalizeListings(value: unknown): ListingRow[] {
 
 function normalizeBreakdown(value: unknown): CountRow[] {
   if (Array.isArray(value)) {
+    const counts = value.map((item) => {
+      const record = asRecord(item)
+      return readNumber(record, ['count', 'value', 'total'])
+    })
+    const total = sumNumbers(counts)
     return value.map((item, index) => {
       const record = asRecord(item)
+      const count = counts[index]
       return {
         label: readString(record, ['label', 'bucket', 'method', 'name', 'key']) ?? `bucket ${index + 1}`,
-        value: formatCount(readNumber(record, ['count', 'value', 'total'])),
-        detail: readString(record, ['share', 'pct', 'percent', 'ratio']) ?? undefined,
+        value: formatCount(count),
+        detail: readPercent(record, ['share', 'pct', 'percent', 'ratio']) ?? formatPercent(count, total),
       }
     })
   }
 
   const record = asRecord(value)
   if (!record) return []
-  return Object.entries(record).map(([label, raw]) => ({
+  const entries = Object.entries(record)
+  const numericValues = entries.map(([, raw]) => readNumericValue(raw))
+  const total = sumNumbers(numericValues)
+  return entries.map(([label, raw], index) => ({
     label,
     value: formatValue(raw),
+    detail: formatPercent(numericValues[index], total),
   }))
 }
 
@@ -822,7 +849,12 @@ function bucketRows<T>(rows: T[], keyFn: (row: T) => string): CountRow[] {
     const key = keyFn(row) || '-'
     counts.set(key, (counts.get(key) ?? 0) + 1)
   })
-  return [...counts.entries()].map(([label, count]) => ({ label, value: String(count) }))
+  const total = rows.length
+  return [...counts.entries()].map(([label, count]) => ({
+    label,
+    value: String(count),
+    detail: formatPercent(count, total),
+  }))
 }
 
 function availabilityFor(payload: unknown): AvailabilityState {
@@ -929,6 +961,27 @@ function readBool(record: RowRecord | null | undefined, keys: string[]): boolean
   return null
 }
 
+function readNumericValue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value)
+  return null
+}
+
+function readPercent(record: RowRecord | null | undefined, keys: string[]): string | undefined {
+  if (!record) return undefined
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return formatPercentValue(value)
+    }
+    if (typeof value === 'string' && value.trim()) {
+      if (value.includes('%')) return value.trim()
+      if (Number.isFinite(Number(value))) return formatPercentValue(Number(value))
+    }
+  }
+  return undefined
+}
+
 function normalizeStrings(value: unknown): string[] {
   if (!Array.isArray(value)) {
     if (typeof value === 'string' && value.trim()) return [value.trim()]
@@ -959,6 +1012,39 @@ function slugKey(label: string): string {
 
 function formatCount(value: number | null | undefined): string {
   return value === null || value === undefined ? '-' : new Intl.NumberFormat('en-US').format(value)
+}
+
+function formatCountWithPercent(value: number, total: number): string {
+  const percent = formatPercent(value, total)
+  return percent ? `${formatCount(value)} (${percent})` : formatCount(value)
+}
+
+function formatPercent(value: number | null | undefined, total: number | null | undefined): string | undefined {
+  if (value === null || value === undefined || total === null || total === undefined || total <= 0) return undefined
+  return `${formatCompactPercent((value / total) * 100)}%`
+}
+
+function formatPercentValue(value: number): string {
+  const percent = value <= 1 ? value * 100 : value
+  return `${formatCompactPercent(percent)}%`
+}
+
+function formatCompactPercent(value: number): string {
+  if (!Number.isFinite(value)) return '-'
+  if (value === 0 || value === 100) return String(Math.round(value))
+  if (value >= 10) return value.toFixed(1).replace(/\.0$/, '')
+  return value.toFixed(2).replace(/0$/, '').replace(/\.0$/, '')
+}
+
+function percentSubLabel(value: number | null, total: number | null, fallback: string): string {
+  const percent = formatPercent(value, total)
+  return percent ? `${percent} ${fallback}` : fallback
+}
+
+function sumNumbers(values: Array<number | null | undefined>): number | null {
+  const valid = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  if (valid.length === 0) return null
+  return valid.reduce((sum, value) => sum + value, 0)
 }
 
 function formatValue(value: unknown): string {
