@@ -32,7 +32,9 @@ type CoverageCountry = {
 type CoveragePayload = {
   generatedAt: string | null
   asOf: string | null
-  config: CoverageFilters
+  config: CoverageFilters & {
+    entityDedupEnabled: boolean
+  }
   summary: {
     countryCount: number
     tickerCount: number
@@ -90,6 +92,8 @@ export function RelationshipMapCoveragePanel() {
   const countries = useMemo(() => [...(payload?.countries ?? [])].sort(compareCountries), [payload])
   const regions = useMemo(() => summarizeRegions(countries), [countries])
   const unavailable = Boolean(error && !loading)
+  const geographyUnit = payload?.config.entityDedupEnabled ? 'entities' : 'tickers'
+  const geographyUnitSingular = geographyUnit === 'entities' ? 'Entity' : 'Ticker'
 
   function updateFilters(partial: Partial<CoverageFilters>) {
     const nextFilters = normalizeFilters({ ...filters, ...partial })
@@ -107,7 +111,7 @@ export function RelationshipMapCoveragePanel() {
         <div>
           <h2>Current universe coverage</h2>
           <p className="small">
-            Coverage of the currently onboarded universe by country. This does not imply total world coverage or global identity completeness.
+            Coverage of the currently onboarded universe by country. Resolved entities use home country when entity-aware aggregation is enabled.
           </p>
         </div>
         <span className="badge queued">as of {payload?.asOf ?? '—'}</span>
@@ -161,9 +165,9 @@ export function RelationshipMapCoveragePanel() {
 
       <div className="relationship-map-summary-grid">
         <CoverageMetric label="Countries covered" value={summaryValue(payload?.summary.countryCount, loading, unavailable)} sub="Countries returned by backend" />
-        <CoverageMetric label="Onboarded tickers" value={summaryValue(payload?.summary.tickerCount, loading, unavailable)} sub="Current onboarded universe" />
-        <CoverageMetric label="Priced tickers" value={summaryValue(payload?.summary.pricedTickerCount, loading, unavailable)} sub="Ticker denominator with prices" />
-        <CoverageMetric label="Fresh priced tickers" value={summaryValue(payload?.summary.freshPricedTickerCount, loading, unavailable)} sub={`Fresh price coverage, ${filters.freshPriceDays}d`} />
+        <CoverageMetric label={`Onboarded ${geographyUnit}`} value={summaryValue(payload?.summary.tickerCount, loading, unavailable)} sub="Current onboarded universe" />
+        <CoverageMetric label={`Priced ${geographyUnit}`} value={summaryValue(payload?.summary.pricedTickerCount, loading, unavailable)} sub={`${geographyUnitSingular} denominator with prices`} />
+        <CoverageMetric label={`Fresh priced ${geographyUnit}`} value={summaryValue(payload?.summary.freshPricedTickerCount, loading, unavailable)} sub={`Fresh price coverage, ${filters.freshPriceDays}d`} />
         <CoverageMetric label="Relationship nodes" value={summaryValue(payload?.summary.relationshipNodeCount, loading, unavailable)} sub={layerLabel(filters.layer)} />
         <CoverageMetric label="Relationship edges" value={summaryValue(payload?.summary.relationshipEdgeCount, loading, unavailable)} sub={`Window ${filters.window}`} />
         <CoverageMetric label="Relationship coverage" value={coverageRatioSummary(payload, loading, unavailable)} sub="Nodes / priced tickers" />
@@ -190,14 +194,14 @@ export function RelationshipMapCoveragePanel() {
                   <span style={{ width: `${Math.round(region.relationshipCoverageRatio * 100)}%` }} />
                 </div>
                 <div className="small">
-                  {region.countryCount} countries, {region.tickerCount} onboarded tickers, {formatRatio(region.relationshipCoverageRatio)} relationship coverage
+                  {region.countryCount} countries, {region.tickerCount} onboarded {geographyUnit}, {formatRatio(region.relationshipCoverageRatio)} relationship coverage
                 </div>
               </div>
             )) : null}
           </div>
         </div>
 
-        <CountryCoverageTable countries={countries} loading={loading} unavailable={unavailable} />
+        <CountryCoverageTable countries={countries} loading={loading} unavailable={unavailable} geographyUnitSingular={geographyUnitSingular} />
       </section>
     </section>
   )
@@ -228,12 +232,12 @@ function CoverageError({ error }: { error: unknown }) {
   )
 }
 
-function CountryCoverageTable({ countries, loading, unavailable }: { countries: CoverageCountry[]; loading: boolean; unavailable: boolean }) {
+function CountryCoverageTable({ countries, loading, unavailable, geographyUnitSingular }: { countries: CoverageCountry[]; loading: boolean; unavailable: boolean; geographyUnitSingular: string }) {
   return (
     <div className="relationship-map-country-table">
       <div>
         <h3>Countries</h3>
-        <p className="small">Sorted by red, yellow, gray, green; then by onboarded ticker count.</p>
+        <p className="small">Sorted by red, yellow, gray, green; then by onboarded count.</p>
       </div>
       <div className="table-wrap">
         <table className="registry-table">
@@ -241,7 +245,7 @@ function CountryCoverageTable({ countries, loading, unavailable }: { countries: 
             <tr>
               <th>Country</th>
               <th>Region</th>
-              <th>Ticker count</th>
+              <th>{geographyUnitSingular} count</th>
               <th>Priced</th>
               <th>Fresh priced</th>
               <th>Relationship nodes</th>
@@ -332,10 +336,14 @@ function worstStatus(statuses: CoverageStatus[]): CoverageStatus {
 
 function normalizeCoveragePayload(payload: unknown, fallbackFilters: CoverageFilters): CoveragePayload {
   const record = asRecord(payload) ?? {}
-  const config = normalizeFilters({
-    ...fallbackFilters,
-    ...asRecord(record.config),
-  })
+  const configRecord = asRecord(record.config)
+  const config = {
+    ...normalizeFilters({
+      ...fallbackFilters,
+      ...configRecord,
+    }),
+    entityDedupEnabled: readBoolean(configRecord, ['entityDedupEnabled', 'entity_dedup_enabled']) ?? false,
+  }
   const summaryRecord = asRecord(record.summary) ?? {}
   return {
     generatedAt: readString(record, ['generatedAt', 'generated_at']),
@@ -433,6 +441,20 @@ function readString(record: RowRecord | null | undefined, keys: string[]): strin
     const value = record[key]
     if (typeof value === 'string' && value.trim()) return value
     if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  }
+  return null
+}
+
+function readBoolean(record: RowRecord | null | undefined, keys: string[]): boolean | null {
+  if (!record) return null
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase()
+      if (normalized === 'true') return true
+      if (normalized === 'false') return false
+    }
   }
   return null
 }
