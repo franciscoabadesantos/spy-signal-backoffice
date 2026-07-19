@@ -323,7 +323,7 @@ function TailPanel({
               <th>Segment</th>
               <th>Reason</th>
               <th>Importance</th>
-              <th>Provider/local market cap</th>
+              <th>Latest metadata market cap</th>
             </tr>
           </thead>
           <tbody>

@@ -23,4 +23,10 @@ describe('Entity Layer Proxy Routes', () => {
       assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
     }
   })
+
+  it('labels entity-tail EAS market cap as latest metadata, not provider/local data', () => {
+    const source = readFileSync(join(process.cwd(), 'components/entity-layer/EntityLayerWorkspace.tsx'), 'utf8')
+    assert.match(source, /Latest metadata market cap/)
+    assert.doesNotMatch(source, /Provider\/local market cap/)
+  })
 })
