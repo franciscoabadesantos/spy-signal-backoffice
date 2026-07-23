@@ -15,6 +15,7 @@ Admin-only operational console (separate app) for analyst and data-ops workflows
 - Targeted rebuild/refill job submission + retry history
 - Macro series upsert and release-calendar row upsert job forms
 - Read-only registry / evidence inspection backed by `finance-backend` registry proxy routes (`/registry`)
+- Live backend API contract inventory (`/contracts`)
 
 ## Environment
 
@@ -83,6 +84,17 @@ It does not fall back to the legacy `/analyst/data-ops/health` contract. If the 
 ```bash
 npm install
 npm run dev
+```
+
+### Backend contract validation
+
+The Backoffice proxy check is intentionally one-way: every implemented Next.js
+proxy must target a current backend operation intended for a UI consumer. It
+does not require every backend operation to have a Backoffice proxy, because
+many operations are frontoffice-only or worker-only.
+
+```bash
+FINANCE_BACKEND_CONTRACT_PATH=/path/to/finance-backend/docs/api-contract.json npm run test:backend-contract
 ```
 
 ### Local Clerk bypass

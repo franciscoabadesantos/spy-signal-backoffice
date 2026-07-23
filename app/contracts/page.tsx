@@ -1,84 +1,7 @@
 import Link from 'next/link'
 import { requireAdminUser } from '@/lib/admin-auth'
-
-const AVAILABLE_CONTRACTS = [
-  {
-    group: 'Data Ops',
-    rows: [
-      ['/analyst/data-ops/health', '/data-ops', 'available / proxied', 'Data readiness snapshot.'],
-      ['/analyst/data-ops/rebuild-jobs', '/data-ops', 'available / proxied', 'Rebuild job list and creation path.'],
-      ['/analyst/data-ops/rebuild-jobs/{job_id}', '/data-ops', 'available / proxied', 'Rebuild job detail.'],
-      ['/analyst/data-ops/rebuild-jobs/{job_id}/retry', '/data-ops', 'available / proxied', 'Retry existing rebuild job.'],
-      ['/analyst/data-ops/duplicates', '/data-ops', 'available / proxied', 'Duplicate inspection.'],
-      ['/analyst/data-ops/freshness', '/data-ops', 'available / proxied', 'Freshness inspection.'],
-      ['/analyst/data-ops/source-comparison', '/data-ops', 'available / proxied', 'Source comparison.'],
-      ['/analyst/data-ops/macro-release-gaps', '/data-ops', 'available / proxied', 'Macro release gap inspection.'],
-    ],
-  },
-  {
-    group: 'Analyst',
-    rows: [
-      ['/analyst/jobs', '/analyst', 'available / proxied', 'Ticker signal, snapshot, and coverage report jobs.'],
-      ['/analyst/jobs/{job_id}', '/analyst', 'available / proxied', 'Analyst job detail.'],
-    ],
-  },
-  {
-    group: 'Research',
-    rows: [
-      ['/analyst/research/experiments', '/research', 'available / proxied', 'Research creation and run library.'],
-      ['/analyst/research/experiments/{experiment_id}', '/research', 'available / proxied', 'Run detail.'],
-      ['/analyst/research/experiments/{experiment_id}/events', '/research', 'available / proxied', 'Run events.'],
-      ['/analyst/research/experiments/{experiment_id}/artifacts', '/research', 'available / proxied', 'Run artifacts.'],
-      ['/analyst/research/experiments/{experiment_id}/cancel', '/research', 'available / proxied', 'Admin cancel action.'],
-      ['/analyst/research/experiments/{experiment_id}/mark-failed', '/research', 'available / proxied', 'Admin mark-failed action.'],
-    ],
-  },
-  {
-    group: 'Registry Read',
-    rows: [
-      ['/analyst/registry/candidates', '/evaluation', 'available / proxied', 'Read-only candidates.'],
-      ['/analyst/registry/bundles', '/evaluation', 'available / proxied', 'Read-only bundles.'],
-      ['/analyst/registry/readiness-reports', '/evaluation', 'available / proxied', 'Read-only readiness reports.'],
-      ['/analyst/registry/promotion-events', '/production, /diagnostics', 'available / proxied', 'Read-only promotion history.'],
-      ['/analyst/registry/active-pointers', '/production', 'available / proxied', 'Read-only active pointers.'],
-      ['/analyst/registry/evidence/{evidence_id}', '/evaluation', 'available / proxied', 'Read-only evidence detail.'],
-    ],
-  },
-  {
-    group: 'Signals',
-    rows: [
-      ['/analyst/signal-evaluation/candidates', '/evaluation', 'available / proxied', 'Signal Evaluation V1 candidate comparison list. Normalizes summaries, sources metadata, and gaps.'],
-      ['/analyst/signal-evaluation/candidates/{candidate_id}', '/evaluation', 'available / proxied', 'Signal Evaluation V1 selected candidate detail.'],
-      ['/analyst/signal-evaluation/candidates/{candidate_id}/report', '/evaluation', 'available / proxied', 'Signal Evaluation V1 selected report with metrics, lineage, artifacts, series containers, and structured gaps.'],
-      ['/screener/signals', '/evaluation', 'available / proxied', 'Latest signal rows.'],
-      ['/signals/history/{ticker}', '/evaluation', 'available / proxied', 'Ticker signal history.'],
-      ['/signals/last-flips', '/evaluation', 'available / proxied', 'Last flip date by ticker.'],
-      ['/signals/flips', '/evaluation', 'available / proxied', 'Flip events by date.'],
-      ['/signals/composition', '/evaluation', 'available / proxied', 'Signal composition by ticker.'],
-    ],
-  },
-  {
-    group: 'Site / Frontoffice',
-    rows: [
-      ['/site/watchlist/all-tickers', '/frontoffice', 'available / proxied', 'All tickers appearing in user watchlists.'],
-      ['/site/watchlist/subscriptions', '/frontoffice', 'available / proxied', 'Ticker subscriptions returned by backend.'],
-      ['/site/watchlist', '/frontoffice', 'available / proxied', 'Requires user_id for user watchlist lookup.'],
-      ['/site/ai-research/runs', '/frontoffice', 'available / proxied', 'Requires user_id for user research run list.'],
-      ['/site/ai-research/runs/{run_id}', '/frontoffice', 'available / proxied', 'Requires user_id for run detail.'],
-      ['/site/ai-research/feedback', 'not used by Backoffice', 'available / missing local proxy', 'Mutation path exists for frontoffice feedback; not needed for read-only admin workspace.'],
-      ['/site/alerts/reserve', 'not used by Backoffice', 'available / missing local proxy', 'Cron/frontoffice alert dispatch path, not admin dashboard data.'],
-      ['/site/alerts/record', 'not used by Backoffice', 'available / missing local proxy', 'Cron/frontoffice alert dispatch path, not admin dashboard data.'],
-      ['/site/analytics/events', 'not used by Backoffice', 'available / missing local proxy', 'Event ingestion exists, but no analytics summary endpoint exists.'],
-    ],
-  },
-  {
-    group: 'Diagnostics',
-    rows: [
-      ['/health', '/, /diagnostics', 'available through health snapshot', 'Backend reachability probe.'],
-      ['protected route probes', '/, /diagnostics', 'available through health snapshot', 'Backoffice route-level smoke checks.'],
-    ],
-  },
-]
+import { fetchBackendContract } from '@/lib/backend-contract'
+import { toBackendProxyErrorPayload } from '@/lib/backend-client'
 
 const MISSING_CONTRACTS = [
   'official signal active model/candidate lineage',
@@ -118,15 +41,17 @@ const SIGNAL_EVALUATION_REQUIRED_CONTRACTS = [
 
 export default async function ContractsPage() {
   const admin = await requireAdminUser()
+  const contractResult = await loadBackendContract()
+  const backofficeOperations = contractResult.contract?.operations.filter((operation) => operation.consumers.includes('backoffice')) ?? []
 
   return (
     <div className="page-stack">
       <div className="hero-panel">
         <div>
           <p className="eyebrow">Backend Contract Inventory</p>
-          <h1>See what Backoffice can really operate, what is proxied, and what still needs backend support.</h1>
+          <h1>See the live backend operations available to Backoffice and what still needs backend support.</h1>
           <p className="hero-copy">
-            This inventory is Backoffice-owned until finance-backend exposes contract metadata. It helps operators and developers distinguish real backend data from UI-only gaps.
+            The operation inventory is loaded from finance-backend. Product requirements that have no backend contract remain separately identified as gaps.
           </p>
         </div>
         <div className="hero-actions">
@@ -138,8 +63,45 @@ export default async function ContractsPage() {
       <div className="card">
         <h2>Why This Exists</h2>
         <p className="small">
-          Operators and developers need one place to see what is real, what is only UI, and which backend contract is missing. This page does not create backend capabilities; it documents the current Backoffice contract surface.
+          Operators and developers need one place to see the live backend contract, its authentication boundary, lifecycle owner, and intended consumers. This page does not create backend capabilities.
         </p>
+      </div>
+
+      <div className="card">
+        <h2>Live Backend Operations</h2>
+        {contractResult.contract ? (
+          <>
+            <p className="small">Contract {contractResult.contract.contract_version} | API {contractResult.contract.api_version} | {backofficeOperations.length} operations intended for Backoffice out of {contractResult.contract.operation_count} total.</p>
+            <div className="table-wrap">
+              <table className="registry-table">
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Route</th>
+                    <th>Audience</th>
+                    <th>Auth</th>
+                    <th>Owner</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {backofficeOperations.map((operation) => (
+                    <tr key={`${operation.method}-${operation.path}`}>
+                      <td>{operation.method}</td>
+                      <td title={operation.auth_notes}>{operation.path}</td>
+                      <td>{operation.audience}</td>
+                      <td>{operation.auth}</td>
+                      <td>{operation.owner}</td>
+                      <td><span className={operation.status === 'stable' ? 'badge completed' : 'badge running'}>{operation.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <p className="small">Backend contract manifest is unavailable: {contractResult.error}</p>
+        )}
       </div>
 
       <div className="card">
@@ -171,34 +133,6 @@ export default async function ContractsPage() {
         </div>
       </div>
 
-      {AVAILABLE_CONTRACTS.map((group) => (
-        <div className="card" key={group.group}>
-          <h2>{group.group}</h2>
-          <div className="table-wrap">
-            <table className="registry-table">
-              <thead>
-                <tr>
-                  <th>Route</th>
-                  <th>Backoffice page</th>
-                  <th>Status</th>
-                  <th>Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.rows.map(([route, page, status, notes]) => (
-                  <tr key={`${group.group}-${route}`}>
-                    <td>{route}</td>
-                    <td>{page}</td>
-                    <td><span className={status.includes('missing') || status.includes('gap') ? 'badge backend-gap' : 'badge completed'}>{status}</span></td>
-                    <td>{notes}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ))}
-
       <div className="card">
         <h2>Missing Contracts</h2>
         <p className="small">These are product requirements that still need finance-backend support before Backoffice can operate them as real control surfaces.</p>
@@ -210,6 +144,14 @@ export default async function ContractsPage() {
       </div>
     </div>
   )
+}
+
+async function loadBackendContract(): Promise<{ contract: Awaited<ReturnType<typeof fetchBackendContract>> | null; error: string | null }> {
+  try {
+    return { contract: await fetchBackendContract(), error: null }
+  } catch (error) {
+    return { contract: null, error: toBackendProxyErrorPayload(error).message }
+  }
 }
 
 function contractStatusClass(status: string): string {
