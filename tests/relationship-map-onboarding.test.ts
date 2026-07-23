@@ -53,18 +53,25 @@ test('bulk onboarding seeds selected tickers immediately as pending backfill row
   assert.equal(statusBadgeClass(row.status), 'queued')
 })
 
-test('status polling normalization preserves backfilling, ready, and rejected states', () => {
+test('status polling normalization preserves lifecycle states and canonical asset type', () => {
   const backfilling = normalizeOnboardingRow({ ticker: 'SPCX', region: 'us', status: 'backfilling' }, candidate, null)
-  const ready = normalizeOnboardingRow({ ticker: 'SPCX', region: 'us', status: 'ready', is_tracked: true }, candidate, null)
+  const ready = normalizeOnboardingRow({ ticker: 'SPCX', region: 'us', status: 'ready', is_tracked: true, asset: { assetType: 'etf' } }, candidate, null)
   const rejected = normalizeOnboardingRow({ ticker: 'SPCX', region: 'us', status: 'rejected' }, candidate, null)
 
   assert.equal(backfilling.status, 'backfilling')
   assert.equal(backfilling.readiness.label, 'Partial data')
   assert.equal(statusBadgeClass(backfilling.status), 'running')
   assert.equal(ready.readiness.label, 'Tracked')
+  assert.equal(ready.assetType, 'etf')
   assert.equal(statusBadgeClass(ready.status), 'completed')
   assert.equal(rejected.readiness.label, 'Rejected')
   assert.equal(statusBadgeClass(rejected.status), 'failed')
+})
+
+test('status polling keeps old backend payloads compatible when asset is absent', () => {
+  const row = normalizeOnboardingRow({ ticker: 'SPCX', region: 'us', status: 'ready' }, candidate, null)
+
+  assert.equal(row.assetType, null)
 })
 
 test('frontier onboarding uses canonical onboard symbol instead of raw holding symbol', () => {

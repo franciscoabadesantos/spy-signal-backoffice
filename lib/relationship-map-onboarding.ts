@@ -35,6 +35,7 @@ export type OnboardingRow = {
   exchange: string | null
   status: string
   readiness: TickerReadinessBadge
+  assetType: string | null
   registryKey: string | null
   normalizedSymbol: string | null
   validationReason: string | null
@@ -165,6 +166,7 @@ export function baseOnboardingRow(
       coverageState: status,
       registryStatus: status,
     }),
+    assetType: null,
     registryKey: null,
     normalizedSymbol: null,
     validationReason: null,
@@ -210,6 +212,7 @@ export function normalizeOnboardingRow(payload: unknown, candidate: Relationship
   const region = readString(record, ['region'])?.toLowerCase() ?? candidateOnboardRegion(candidate)
   const exchange = readString(record, ['exchange']) ?? candidateOnboardExchange(candidate)
   const status = readString(record, ['status']) ?? 'pending_validation'
+  const asset = asRecord(record.asset)
   return {
     key: onboardingKey(symbol, region, exchange),
     symbol,
@@ -220,6 +223,7 @@ export function normalizeOnboardingRow(payload: unknown, candidate: Relationship
     exchange,
     status,
     readiness: readinessFromRecord(record, status),
+    assetType: readString(asset ?? {}, ['assetType', 'asset_type'])?.toLowerCase() ?? null,
     registryKey: readString(record, ['registry_key', 'registryKey']),
     normalizedSymbol: readString(record, ['normalized_symbol', 'normalizedSymbol']),
     validationReason: readString(record, ['validation_reason', 'validationReason']),

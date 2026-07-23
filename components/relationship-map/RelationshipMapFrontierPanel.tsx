@@ -677,6 +677,7 @@ export function RelationshipMapFrontierPanel() {
                 <th>Symbol</th>
                 <th>Home</th>
                 <th>Status</th>
+                <th>Asset type</th>
                 <th>Registry key</th>
                 <th>Reason</th>
                 <th>Updated</th>
@@ -686,7 +687,7 @@ export function RelationshipMapFrontierPanel() {
             <tbody>
               {onboardingRows.length === 0 ? (
                 <tr>
-                  <td className="small" colSpan={7}>No onboarding requests in this session.</td>
+                  <td className="small" colSpan={8}>No onboarding requests in this session.</td>
                 </tr>
               ) : null}
               {onboardingRows.map((row) => (
@@ -703,6 +704,7 @@ export function RelationshipMapFrontierPanel() {
                     </span>
                     {!row.loading && row.status ? <div className="small">{row.status}</div> : null}
                   </td>
+                  <td className="small">{row.assetType ?? 'Unknown'}</td>
                   <td className="small">{row.registryKey ?? '-'}</td>
                   <td>{row.error ? <span className="error-inline">{row.error}</span> : row.validationReason ?? row.readiness.diagnostic ?? '-'}</td>
                   <td className="small">{shortTimestamp(row.updatedAt)}</td>
