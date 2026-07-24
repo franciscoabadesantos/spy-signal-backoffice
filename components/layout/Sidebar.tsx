@@ -83,6 +83,7 @@ export function Sidebar({ health, candidateCount, loadStatus = false }: Props) {
         { label: 'Data', href: '/data', dot: sidebarHealth.data },
         { label: 'Market Metrics', href: '/market-metrics', dot: 'gray' },
         { label: 'Earnings Events', href: '/earnings-events', dot: 'gray' },
+        { label: 'Corporate Actions', href: '/corporate-actions', dot: 'gray' },
         { label: 'Financial Statements', href: '/financial-statements', dot: 'gray' },
         { label: 'Entity Layer', href: '/entity-layer', dot: 'gray' },
       ],
