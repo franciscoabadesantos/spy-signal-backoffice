@@ -21,6 +21,8 @@ type EarningsRow = {
   revenueEstimate: number | null
   knownAt: string | null
   source: string | null
+  primarySource: string | null
+  sourceMetadata: unknown
   dataQualityFlags: unknown
 }
 
@@ -137,7 +139,8 @@ export function EarningsEventsWorkspace({ adminEmail }: Props) {
                 <th>EPS actual / estimate / surprise</th>
                 <th>Revenue actual / estimate</th>
                 <th>Known at</th>
-                <th>Source</th>
+                <th>Source / primary</th>
+                <th>Revenue provenance</th>
                 <th>Quality flags</th>
               </tr>
             </thead>
@@ -152,7 +155,8 @@ export function EarningsEventsWorkspace({ adminEmail }: Props) {
                   <td>{formatNumber(row.epsActual)} / {formatNumber(row.epsEstimate)} / {formatNumber(row.epsSurprise)}</td>
                   <td>{formatNumber(row.revenueActual)} / {formatNumber(row.revenueEstimate)}</td>
                   <td>{row.knownAt ?? '-'}</td>
-                  <td className="small">{row.source ?? '-'}</td>
+                  <td className="small">{row.source ?? '-'}<div>primary: {row.primarySource ?? '-'}</div></td>
+                  <td className="small">{formatRevenueProvenance(row.sourceMetadata)}</td>
                   <td className="small">{formatFlags(row.dataQualityFlags)}</td>
                 </tr>
               )) : null}
@@ -165,7 +169,7 @@ export function EarningsEventsWorkspace({ adminEmail }: Props) {
 }
 
 function EmptyRow({ message }: { message: string }) {
-  return <tr><td className="small" colSpan={8}>{message}</td></tr>
+  return <tr><td className="small" colSpan={9}>{message}</td></tr>
 }
 
 function AvailabilityBadge({ available }: { available: boolean | null }) {
@@ -202,6 +206,8 @@ function normalizeRow(value: RowRecord): EarningsRow {
     revenueEstimate: readNumber(value.revenueEstimate ?? value.revenue_estimate),
     knownAt: readString(value, ['knownAt', 'known_at']),
     source: readString(value, ['source']),
+    primarySource: readString(value, ['primarySource', 'primary_source']),
+    sourceMetadata: value.sourceMetadata ?? value.source_metadata ?? {},
     dataQualityFlags: value.dataQualityFlags ?? value.data_quality_flags ?? {},
   }
 }
@@ -228,6 +234,20 @@ function formatFlags(value: unknown): string {
   if (value === null || value === undefined) return '-'
   if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value as Record<string, unknown>).length === 0) return '-'
   return typeof value === 'string' ? value : JSON.stringify(value)
+}
+
+function formatRevenueProvenance(value: unknown): string {
+  const metadata = asRecord(value)
+  const provenance = asRecord(metadata?.fieldProvenance ?? metadata?.field_provenance)
+  const sources = sourceList(metadata?.contributingSources ?? metadata?.contributing_sources)
+  const actual = readString(provenance, ['revenue_actual', 'revenueActual']) ?? '-'
+  const estimate = readString(provenance, ['revenue_estimate', 'revenueEstimate']) ?? '-'
+  return `sources: ${sources || '-'}; actual: ${actual}; estimate: ${estimate}`
+}
+
+function sourceList(value: unknown): string {
+  if (!Array.isArray(value)) return ''
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).join(', ')
 }
 
 function errorMessage(error: unknown): string {
