@@ -85,6 +85,7 @@ export function Sidebar({ health, candidateCount, loadStatus = false }: Props) {
         { label: 'Earnings Events', href: '/earnings-events', dot: 'gray' },
         { label: 'Corporate Actions', href: '/corporate-actions', dot: 'gray' },
         { label: 'Filings', href: '/filings', dot: 'gray' },
+        { label: 'Investor Events', href: '/investor-events', dot: 'gray' },
         { label: 'Financial Statements', href: '/financial-statements', dot: 'gray' },
         { label: 'Entity Layer', href: '/entity-layer', dot: 'gray' },
       ],
