@@ -5,6 +5,7 @@ import { requestClientJson } from '@/lib/client-json'
 import { asRecord, firstList, type RowRecord } from '@/lib/payload'
 
 type Props = { adminEmail: string }
+type EarningsMode = 'pit' | 'latest'
 
 type EarningsRow = {
   eventId: string
@@ -31,6 +32,8 @@ type EarningsResponse = {
   reason: string | null
   symbol: string | null
   count: number
+  mode: string | null
+  isPointInTime: boolean | null
   rows: EarningsRow[]
 }
 
@@ -38,13 +41,20 @@ export function EarningsEventsWorkspace({ adminEmail }: Props) {
   const [symbol, setSymbol] = useState('AAPL')
   const [eventStatus, setEventStatus] = useState('')
   const [fiscalPeriod, setFiscalPeriod] = useState('')
+  const [mode, setMode] = useState<EarningsMode>('pit')
   const [latestOnly, setLatestOnly] = useState(false)
   const [payload, setPayload] = useState<unknown | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const response = useMemo(() => normalizeResponse(payload), [payload])
 
-  async function loadEvents(nextSymbol = symbol, nextStatus = eventStatus, nextPeriod = fiscalPeriod, nextLatestOnly = latestOnly) {
+  async function loadEvents(
+    nextSymbol = symbol,
+    nextStatus = eventStatus,
+    nextPeriod = fiscalPeriod,
+    nextMode = mode,
+    nextLatestOnly = latestOnly,
+  ) {
     const normalizedSymbol = nextSymbol.trim().toUpperCase()
     if (!normalizedSymbol) {
       setPayload(null)
@@ -53,11 +63,13 @@ export function EarningsEventsWorkspace({ adminEmail }: Props) {
     }
     setLoading(true)
     setError(null)
-    const params = new URLSearchParams({ symbol: normalizedSymbol, limit: '250', latestOnly: String(nextLatestOnly) })
+    const params = new URLSearchParams({ symbol: normalizedSymbol, limit: '250' })
+    if (nextMode === 'pit') params.set('latestOnly', String(nextLatestOnly))
     if (nextStatus) params.set('eventStatus', nextStatus)
     if (nextPeriod.trim()) params.set('fiscalPeriod', nextPeriod.trim())
     try {
-      setPayload(await requestClientJson(`/api/earnings-events?${params.toString()}`))
+      const path = nextMode === 'latest' ? '/api/earnings-events/latest' : '/api/earnings-events'
+      setPayload(await requestClientJson(`${path}?${params.toString()}`))
     } catch (requestError) {
       setPayload(null)
       setError(errorMessage(requestError))
@@ -71,8 +83,15 @@ export function EarningsEventsWorkspace({ adminEmail }: Props) {
     void loadEvents()
   }
 
+  function selectMode(nextMode: EarningsMode) {
+    if (nextMode === mode) return
+    setMode(nextMode)
+    if (nextMode === 'latest') setLatestOnly(false)
+    void loadEvents(symbol, eventStatus, fiscalPeriod, nextMode, nextMode === 'pit' ? latestOnly : false)
+  }
+
   useEffect(() => {
-    const timer = window.setTimeout(() => void loadEvents('AAPL', '', '', false), 0)
+    const timer = window.setTimeout(() => void loadEvents('AAPL', '', '', 'pit', false), 0)
     return () => window.clearTimeout(timer)
     // The first render intentionally loads one known symbol for inspection.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,9 +104,14 @@ export function EarningsEventsWorkspace({ adminEmail }: Props) {
           <div>
             <p className="eyebrow">Analyst workspace</p>
             <h1>Earnings Events</h1>
-            <p className="small">Canonical temporal observations. Known at is the source-cache observation date, not the earnings report date.</p>
+            <p className="small">{mode === 'latest' ? 'Latest enriched is non-PIT and must not be used for strict backtests.' : 'Canonical temporal observations. Known at is the source-cache observation date, not the earnings report date.'}</p>
           </div>
           <div className="small">Admin: {adminEmail}</div>
+        </div>
+
+        <div className="chart-tabs" role="tablist" aria-label="Earnings event read mode">
+          <button aria-selected={mode === 'pit'} className={mode === 'pit' ? 'primary' : 'secondary'} onClick={() => selectMode('pit')} role="tab" type="button">Temporal PIT</button>
+          <button aria-selected={mode === 'latest'} className={mode === 'latest' ? 'primary' : 'secondary'} onClick={() => selectMode('latest')} role="tab" type="button">Latest enriched</button>
         </div>
 
         <form className="entity-layer-query" onSubmit={submit}>
@@ -109,10 +133,10 @@ export function EarningsEventsWorkspace({ adminEmail }: Props) {
             <label htmlFor="earnings-events-period">Fiscal period</label>
             <input id="earnings-events-period" onChange={(event) => setFiscalPeriod(event.target.value)} placeholder="2026Q2" value={fiscalPeriod} />
           </div>
-          <label className="entity-layer-query-action">
+          {mode === 'pit' ? <label className="entity-layer-query-action">
             <input checked={latestOnly} onChange={(event) => setLatestOnly(event.target.checked)} type="checkbox" />
             Latest only
-          </label>
+          </label> : null}
           <div className="entity-layer-query-action">
             <button className="primary" disabled={loading} type="submit">{loading ? 'Loading' : 'Load'}</button>
           </div>
@@ -123,7 +147,7 @@ export function EarningsEventsWorkspace({ adminEmail }: Props) {
         <div className="split-row">
           <div>
             <h2>Observations</h2>
-            <p className="small">{response.symbol ?? symbol.trim().toUpperCase()} {loading ? 'loading' : `${response.count} rows`}</p>
+            <p className="small">{response.symbol ?? symbol.trim().toUpperCase()} {loading ? 'loading' : `${response.count} rows`}{response.mode === 'latest' || response.isPointInTime === false ? ' | latest / non-PIT' : ''}</p>
           </div>
           <AvailabilityBadge available={response.available} />
         </div>
@@ -186,6 +210,8 @@ function normalizeResponse(payload: unknown): EarningsResponse {
     reason: readString(record, ['reason']),
     symbol: readString(record, ['symbol']),
     count: readNumber(record?.count) ?? rows.length,
+    mode: readString(record, ['mode']),
+    isPointInTime: typeof record?.isPointInTime === 'boolean' ? record.isPointInTime : typeof record?.is_point_in_time === 'boolean' ? record.is_point_in_time : null,
     rows,
   }
 }
