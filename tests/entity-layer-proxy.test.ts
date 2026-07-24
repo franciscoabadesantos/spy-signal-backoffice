@@ -69,6 +69,15 @@ describe('Entity Layer Proxy Routes', () => {
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
+  it('proxies filings through an admin-only read route', () => {
+    const source = readFileSync(join(process.cwd(), 'app/api/filings/route.ts'), 'utf8')
+    assert.match(source, /export async function GET/)
+    assert.match(source, /withAdminRoute/)
+    assert.match(source, /proxyBackendJson/)
+    assert.match(source, /path: '\/analyst\/filings'/)
+    assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
+  })
+
   it('labels entity-tail EAS market cap as latest metadata, not provider/local data', () => {
     const source = readFileSync(join(process.cwd(), 'components/entity-layer/EntityLayerWorkspace.tsx'), 'utf8')
     assert.match(source, /Latest metadata market cap/)
