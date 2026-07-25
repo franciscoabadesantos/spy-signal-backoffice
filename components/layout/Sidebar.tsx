@@ -82,6 +82,8 @@ export function Sidebar({ health, candidateCount, loadStatus = false }: Props) {
       items: [
         { label: 'Data Control', href: '/data-control', dot: sidebarHealth.data },
         { label: 'Equity capital events', href: '/equity-capital-events', dot: 'gray' },
+        { label: 'Fund distributions', href: '/fund-distributions', dot: 'gray' },
+        { label: 'Fund rebalances', href: '/fund-rebalances', dot: 'gray' },
         { label: 'Data Ops', href: '/data-ops', dot: 'gray' },
         { label: 'Entity Layer', href: '/entity-layer', dot: 'gray' },
       ],

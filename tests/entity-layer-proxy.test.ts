@@ -116,6 +116,28 @@ describe('Entity Layer Proxy Routes', () => {
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
+  it('proxies fund distributions and rebalances through admin-only read routes', () => {
+    for (const [route, backendPath] of [['fund-distributions', '/analyst/fund-distributions'], ['fund-rebalances', '/analyst/fund-rebalances']]) {
+      const source = readFileSync(join(process.cwd(), 'app/api', route, 'route.ts'), 'utf8')
+      assert.match(source, /export async function GET/)
+      assert.match(source, /withAdminRoute/)
+      assert.match(source, /proxyBackendJson/)
+      assert.match(source, new RegExp(`path: '${backendPath}'`))
+      assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
+    }
+  })
+
+  it('renders fund-event pages as temporal canonical audit surfaces', () => {
+    const distributions = readFileSync(join(process.cwd(), 'components/fund-distributions/FundDistributionsWorkspace.tsx'), 'utf8')
+    const rebalances = readFileSync(join(process.cwd(), 'components/fund-rebalances/FundRebalancesWorkspace.tsx'), 'utf8')
+    assert.match(distributions, /Temporal PIT canonical distributions/)
+    assert.match(distributions, /observationConfidence/)
+    assert.match(rebalances, /Holdings snapshots are not inferred/)
+    assert.match(rebalances, /observationConfidence/)
+    assert.doesNotMatch(distributions, /source_cache/)
+    assert.doesNotMatch(rebalances, /source_cache/)
+  })
+
   it('renders equity capital events as a temporal candidate-inspection surface', () => {
     const source = readFileSync(join(process.cwd(), 'components/equity-capital-events/EquityCapitalEventsWorkspace.tsx'), 'utf8')
     assert.match(source, /Temporal PIT canonical candidates/)
