@@ -80,14 +80,8 @@ export function Sidebar({ health, candidateCount, loadStatus = false }: Props) {
     {
       label: 'DATA',
       items: [
-        { label: 'Data', href: '/data', dot: sidebarHealth.data },
-        { label: 'Market Metrics', href: '/market-metrics', dot: 'gray' },
-        { label: 'Earnings Events', href: '/earnings-events', dot: 'gray' },
-        { label: 'Corporate Actions', href: '/corporate-actions', dot: 'gray' },
-        { label: 'Filings', href: '/filings', dot: 'gray' },
-        { label: 'Investor Events', href: '/investor-events', dot: 'gray' },
-        { label: 'Guidance', href: '/guidance', dot: 'gray' },
-        { label: 'Financial Statements', href: '/financial-statements', dot: 'gray' },
+        { label: 'Data Control', href: '/data-control', dot: sidebarHealth.data },
+        { label: 'Data Ops', href: '/data-ops', dot: 'gray' },
         { label: 'Entity Layer', href: '/entity-layer', dot: 'gray' },
       ],
     },
