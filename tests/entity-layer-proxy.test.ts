@@ -87,10 +87,30 @@ describe('Entity Layer Proxy Routes', () => {
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
+  it('proxies guidance through an admin-only read route', () => {
+    const source = readFileSync(join(process.cwd(), 'app/api/guidance/route.ts'), 'utf8')
+    assert.match(source, /export async function GET/)
+    assert.match(source, /withAdminRoute/)
+    assert.match(source, /proxyBackendJson/)
+    assert.match(source, /path: '\/analyst\/guidance'/)
+    assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
+  })
+
   it('renders investor events as a temporal candidate-inspection surface', () => {
     const source = readFileSync(join(process.cwd(), 'components/investor-events/InvestorEventsWorkspace.tsx'), 'utf8')
     assert.match(source, /Temporal PIT canonical candidates/)
     assert.match(source, /candidate/)
+    assert.match(source, /unconfirmed/)
+    assert.match(source, /fieldProvenance/)
+    assert.match(source, /providerObservations/)
+    assert.doesNotMatch(source, /source_cache/)
+    assert.doesNotMatch(source, /fetch\(/)
+  })
+
+  it('renders guidance as a temporal candidate-inspection surface', () => {
+    const source = readFileSync(join(process.cwd(), 'components/guidance/GuidanceWorkspace.tsx'), 'utf8')
+    assert.match(source, /Temporal PIT canonical guidance candidates/)
+    assert.match(source, /guidanceCandidate/)
     assert.match(source, /unconfirmed/)
     assert.match(source, /fieldProvenance/)
     assert.match(source, /providerObservations/)
