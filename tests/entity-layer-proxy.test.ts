@@ -107,6 +107,25 @@ describe('Entity Layer Proxy Routes', () => {
     }
   })
 
+  it('proxies equity capital events through an admin-only read route', () => {
+    const source = readFileSync(join(process.cwd(), 'app/api/equity-capital-events/route.ts'), 'utf8')
+    assert.match(source, /export async function GET/)
+    assert.match(source, /withAdminRoute/)
+    assert.match(source, /proxyBackendJson/)
+    assert.match(source, /path: '\/analyst\/equity-capital-events'/)
+    assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
+  })
+
+  it('renders equity capital events as a temporal candidate-inspection surface', () => {
+    const source = readFileSync(join(process.cwd(), 'components/equity-capital-events/EquityCapitalEventsWorkspace.tsx'), 'utf8')
+    assert.match(source, /Temporal PIT canonical candidates/)
+    assert.match(source, /equityCapitalCandidate/)
+    assert.match(source, /extractionConfidence/)
+    assert.match(source, /fieldProvenance/)
+    assert.doesNotMatch(source, /source_cache/)
+    assert.doesNotMatch(source, /fetch\(/)
+  })
+
   it('renders data control as a paged universe and source-health operational surface', () => {
     const source = readFileSync(join(process.cwd(), 'components/data-control/DataControlWorkspace.tsx'), 'utf8')
     assert.match(source, /Tracked universe coverage/)

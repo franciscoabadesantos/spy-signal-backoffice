@@ -14,12 +14,13 @@ const COVERAGE_PAGE_SIZE = 250
 
 const DOMAINS = [
   ['financialStatements', 'Statements'], ['marketMetrics', 'Metrics'], ['earningsEvents', 'Earnings'],
-  ['filings', 'Filings'], ['corporateActions', 'Actions'], ['investorEvents', 'Investor events'], ['guidance', 'Guidance'],
+  ['filings', 'Filings'], ['corporateActions', 'Actions'], ['investorEvents', 'Investor events'], ['guidance', 'Guidance'], ['equityCapitalEvents', 'Capital events'],
 ] as const
 
 const RAW_PATHS: Record<string, string> = {
   financialStatements: '/financial-statements', marketMetrics: '/market-metrics', earningsEvents: '/earnings-events',
   filings: '/filings', corporateActions: '/corporate-actions', investorEvents: '/investor-events', guidance: '/guidance',
+  equityCapitalEvents: '/equity-capital-events',
 }
 
 export function DataControlWorkspace({ adminEmail }: Props) {
