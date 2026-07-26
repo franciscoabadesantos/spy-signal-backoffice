@@ -97,7 +97,7 @@ describe('Entity Layer Proxy Routes', () => {
   })
 
   it('proxies data control coverage and source health through admin-only read routes', () => {
-    for (const [route, backendPath] of [['coverage', '/analyst/data-control/coverage'], ['domains', '/analyst/data-control/domains'], ['sources', '/analyst/data-control/sources']]) {
+    for (const [route, backendPath] of [['coverage', '/analyst/data-control/coverage'], ['calendar', '/analyst/data-control/calendar'], ['disclosures', '/analyst/data-control/disclosures'], ['domains', '/analyst/data-control/domains'], ['sources', '/analyst/data-control/sources']]) {
       const source = readFileSync(join(process.cwd(), 'app/api/data-control', route, 'route.ts'), 'utf8')
       assert.match(source, /export async function GET/)
       assert.match(source, /withAdminRoute/)
@@ -153,6 +153,8 @@ describe('Entity Layer Proxy Routes', () => {
     assert.match(source, /Tracked universe coverage/)
     assert.match(source, /Canonical pipeline inventory/)
     assert.match(source, /Source lineage/)
+    assert.match(source, /Operational calendar/)
+    assert.match(source, /Disclosure monitor/)
     assert.match(source, /Low confidence/)
     assert.match(source, /COVERAGE_PAGE_SIZE/)
     assert.match(source, /successful empty build means no safe canonical observations/)
