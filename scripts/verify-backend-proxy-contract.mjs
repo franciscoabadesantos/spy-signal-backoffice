@@ -67,9 +67,18 @@ async function collectProxyTargets(directory) {
 
 function extractProxyTargets(source, sourcePath) {
   const calls = [...source.matchAll(/proxy(?:Research)?BackendJson\s*\(\s*\{/g)]
+  const canonicalCalls = [...source.matchAll(/proxyCanonicalTickerResource\s*\(\s*\{[\s\S]*?resource:\s*'([^']+)'[\s\S]*?\}\s*\)/g)]
   const actionValues = [...source.matchAll(/type\s+ResearchAdminAction\s*=\s*([^\n]+)/g)]
     .flatMap((match) => [...match[1].matchAll(/'([^']+)'/g)].map((value) => value[1]))
   const targets = []
+
+  for (const match of canonicalCalls) {
+    targets.push({
+      method: 'GET',
+      path: `/tickers/{}/${match[1]}`,
+      source: sourcePath.replace(`${repositoryRoot}/`, ''),
+    })
+  }
 
   for (let index = 0; index < calls.length; index += 1) {
     const start = calls[index].index

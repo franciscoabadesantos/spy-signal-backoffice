@@ -36,6 +36,26 @@ Copy `.env.example` to `.env.local` and set:
 - Backoffice does not execute feature engineering, ML training, strategy construction, backtests, or orchestrator logic.
 - Backoffice does not directly access backend Supabase tables, registry DB tables, or other internal databases.
 
+## Canonical Finance API
+
+Ticker-scoped finance data is resource-oriented and shared with the frontoffice:
+
+- `GET /tickers/{ticker}/financial-statements`
+- `GET /tickers/{ticker}/market-metrics`
+- `GET /tickers/{ticker}/earnings-events` and `/latest`
+- `GET /tickers/{ticker}/corporate-actions`
+- `GET /tickers/{ticker}/filings`
+- `GET /tickers/{ticker}/investor-events`
+- `GET /tickers/{ticker}/guidance`
+- `GET /tickers/{ticker}/equity-capital-events`
+- `GET /tickers/{ticker}/fund-distributions`
+
+Backoffice Next routes translate their existing `?symbol=` UI contract into these
+canonical paths and authenticate upstream with `BACKEND_SERVICE_TOKEN`.
+Cross-universe operational inventories use `/admin/data-control/*`; the global
+rebalance explorer uses `/admin/fund-rebalances`. Deprecated `/analyst/*`
+ticker-detail aliases are not consumed by this repository.
+
 ## Model Registry Views
 
 The `/registry` area is read-only and consumes `finance-backend` registry proxy routes. It does not call the registry service directly from the backoffice.

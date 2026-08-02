@@ -28,8 +28,8 @@ describe('Entity Layer Proxy Routes', () => {
     const source = readFileSync(join(process.cwd(), 'app/api/financial-statements/route.ts'), 'utf8')
     assert.match(source, /export async function GET/)
     assert.match(source, /withAdminRoute/)
-    assert.match(source, /proxyBackendJson/)
-    assert.match(source, /path: '\/analyst\/financial-statements'/)
+    assert.match(source, /proxyCanonicalTickerResource/)
+    assert.match(source, /resource: 'financial-statements'/)
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
@@ -37,8 +37,8 @@ describe('Entity Layer Proxy Routes', () => {
     const source = readFileSync(join(process.cwd(), 'app/api/market-metrics/route.ts'), 'utf8')
     assert.match(source, /export async function GET/)
     assert.match(source, /withAdminRoute/)
-    assert.match(source, /proxyBackendJson/)
-    assert.match(source, /path: '\/analyst\/market-metrics'/)
+    assert.match(source, /proxyCanonicalTickerResource/)
+    assert.match(source, /resource: 'market-metrics'/)
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
@@ -46,8 +46,8 @@ describe('Entity Layer Proxy Routes', () => {
     const source = readFileSync(join(process.cwd(), 'app/api/earnings-events/route.ts'), 'utf8')
     assert.match(source, /export async function GET/)
     assert.match(source, /withAdminRoute/)
-    assert.match(source, /proxyBackendJson/)
-    assert.match(source, /path: '\/analyst\/earnings-events'/)
+    assert.match(source, /proxyCanonicalTickerResource/)
+    assert.match(source, /resource: 'earnings-events'/)
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
@@ -55,8 +55,8 @@ describe('Entity Layer Proxy Routes', () => {
     const source = readFileSync(join(process.cwd(), 'app/api/earnings-events/latest/route.ts'), 'utf8')
     assert.match(source, /export async function GET/)
     assert.match(source, /withAdminRoute/)
-    assert.match(source, /proxyBackendJson/)
-    assert.match(source, /path: '\/analyst\/earnings-events\/latest'/)
+    assert.match(source, /proxyCanonicalTickerResource/)
+    assert.match(source, /resource: 'earnings-events\/latest'/)
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
@@ -64,8 +64,8 @@ describe('Entity Layer Proxy Routes', () => {
     const source = readFileSync(join(process.cwd(), 'app/api/corporate-actions/route.ts'), 'utf8')
     assert.match(source, /export async function GET/)
     assert.match(source, /withAdminRoute/)
-    assert.match(source, /proxyBackendJson/)
-    assert.match(source, /path: '\/analyst\/corporate-actions'/)
+    assert.match(source, /proxyCanonicalTickerResource/)
+    assert.match(source, /resource: 'corporate-actions'/)
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
@@ -73,8 +73,8 @@ describe('Entity Layer Proxy Routes', () => {
     const source = readFileSync(join(process.cwd(), 'app/api/filings/route.ts'), 'utf8')
     assert.match(source, /export async function GET/)
     assert.match(source, /withAdminRoute/)
-    assert.match(source, /proxyBackendJson/)
-    assert.match(source, /path: '\/analyst\/filings'/)
+    assert.match(source, /proxyCanonicalTickerResource/)
+    assert.match(source, /resource: 'filings'/)
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
@@ -82,8 +82,8 @@ describe('Entity Layer Proxy Routes', () => {
     const source = readFileSync(join(process.cwd(), 'app/api/investor-events/route.ts'), 'utf8')
     assert.match(source, /export async function GET/)
     assert.match(source, /withAdminRoute/)
-    assert.match(source, /proxyBackendJson/)
-    assert.match(source, /path: '\/analyst\/investor-events'/)
+    assert.match(source, /proxyCanonicalTickerResource/)
+    assert.match(source, /resource: 'investor-events'/)
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
@@ -91,13 +91,13 @@ describe('Entity Layer Proxy Routes', () => {
     const source = readFileSync(join(process.cwd(), 'app/api/guidance/route.ts'), 'utf8')
     assert.match(source, /export async function GET/)
     assert.match(source, /withAdminRoute/)
-    assert.match(source, /proxyBackendJson/)
-    assert.match(source, /path: '\/analyst\/guidance'/)
+    assert.match(source, /proxyCanonicalTickerResource/)
+    assert.match(source, /resource: 'guidance'/)
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
   it('proxies data control coverage and source health through admin-only read routes', () => {
-    for (const [route, backendPath] of [['coverage', '/analyst/data-control/coverage'], ['calendar', '/analyst/data-control/calendar'], ['disclosures', '/analyst/data-control/disclosures'], ['domains', '/analyst/data-control/domains'], ['sources', '/analyst/data-control/sources']]) {
+    for (const [route, backendPath] of [['coverage', '/admin/data-control/coverage'], ['calendar', '/admin/data-control/calendar'], ['disclosures', '/admin/data-control/disclosures'], ['domains', '/admin/data-control/domains'], ['sources', '/admin/data-control/sources']]) {
       const source = readFileSync(join(process.cwd(), 'app/api/data-control', route, 'route.ts'), 'utf8')
       assert.match(source, /export async function GET/)
       assert.match(source, /withAdminRoute/)
@@ -111,20 +111,19 @@ describe('Entity Layer Proxy Routes', () => {
     const source = readFileSync(join(process.cwd(), 'app/api/equity-capital-events/route.ts'), 'utf8')
     assert.match(source, /export async function GET/)
     assert.match(source, /withAdminRoute/)
-    assert.match(source, /proxyBackendJson/)
-    assert.match(source, /path: '\/analyst\/equity-capital-events'/)
+    assert.match(source, /proxyCanonicalTickerResource/)
+    assert.match(source, /resource: 'equity-capital-events'/)
     assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
-  it('proxies fund distributions and rebalances through admin-only read routes', () => {
-    for (const [route, backendPath] of [['fund-distributions', '/analyst/fund-distributions'], ['fund-rebalances', '/analyst/fund-rebalances']]) {
-      const source = readFileSync(join(process.cwd(), 'app/api', route, 'route.ts'), 'utf8')
-      assert.match(source, /export async function GET/)
-      assert.match(source, /withAdminRoute/)
-      assert.match(source, /proxyBackendJson/)
-      assert.match(source, new RegExp(`path: '${backendPath}'`))
-      assert.doesNotMatch(source, /export async function (POST|PUT|PATCH|DELETE)/)
-    }
+  it('proxies fund distributions canonically and keeps global rebalances administrative', () => {
+    const distributions = readFileSync(join(process.cwd(), 'app/api/fund-distributions/route.ts'), 'utf8')
+    assert.match(distributions, /proxyCanonicalTickerResource/)
+    assert.match(distributions, /resource: 'fund-distributions'/)
+    const rebalances = readFileSync(join(process.cwd(), 'app/api/fund-rebalances/route.ts'), 'utf8')
+    assert.match(rebalances, /proxyBackendJson/)
+    assert.match(rebalances, /path: '\/admin\/fund-rebalances'/)
+    assert.doesNotMatch(distributions + rebalances, /export async function (POST|PUT|PATCH|DELETE)/)
   })
 
   it('renders fund-event pages as temporal canonical audit surfaces', () => {

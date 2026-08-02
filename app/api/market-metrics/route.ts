@@ -1,12 +1,8 @@
 import { NextRequest } from 'next/server'
-import { proxyBackendJson, withAdminRoute } from '@/lib/backend-client'
+import { proxyCanonicalTickerResource, withAdminRoute } from '@/lib/backend-client'
 
 export async function GET(request: NextRequest) {
   return withAdminRoute(async () => {
-    return proxyBackendJson({
-      path: '/analyst/market-metrics',
-      method: 'GET',
-      searchParams: request.nextUrl.searchParams,
-    })
+    return proxyCanonicalTickerResource({ resource: 'market-metrics', searchParams: request.nextUrl.searchParams })
   })
 }

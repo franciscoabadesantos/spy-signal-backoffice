@@ -192,6 +192,31 @@ export async function proxyBackendJson(options: ProxyBackendJsonOptions): Promis
   return NextResponse.json(payload, { status: upstream.status })
 }
 
+export async function proxyCanonicalTickerResource({
+  resource,
+  searchParams,
+}: {
+  resource: string
+  searchParams: URLSearchParams
+}): Promise<NextResponse> {
+  const symbol = (searchParams.get('symbol') || '').trim().toUpperCase()
+  if (!symbol) {
+    return NextResponse.json(
+      { error: 'SYMBOL_REQUIRED', message: 'symbol is required.', statusCode: 400 },
+      { status: 400 },
+    )
+  }
+
+  const forwarded = new URLSearchParams(searchParams)
+  forwarded.delete('symbol')
+  return proxyBackendJson({
+    path: `/tickers/${encodeURIComponent(symbol)}/${resource}`,
+    method: 'GET',
+    searchParams: forwarded,
+    requireBackendServiceToken: true,
+  })
+}
+
 export async function proxyResearchBackendJson(options: Omit<ProxyBackendJsonOptions, 'requireBackendServiceToken' | 'includeCloudflareAccess'>): Promise<NextResponse> {
   return proxyBackendJson({
     ...options,
