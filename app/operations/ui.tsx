@@ -99,7 +99,7 @@ export default function OperationsWorkspace({ adminEmail, overview, loadError }:
                           {deployment.displayName && deployment.displayName !== deployment.name ? <div className="small">{deployment.name}</div> : null}
                         </td>
                         <td>{deployment.workPoolName || 'unknown'}</td>
-                        <td>{deploymentNextRunLabel(deployment.nextRunAt)}</td>
+                        <td>{deploymentNextRunLabel(deployment.nextRunAt, deployment.hasSchedule)}</td>
                         <td><span className={statusBadgeClass(deployment.lastRunState)}>{deploymentLastStateLabel(deployment.lastRunState)}</span></td>
                         <td>{deploymentLastRunLabel(deployment.lastRunAt)}</td>
                         <td><ExternalLink href={deployment.url} label="Open" /></td>

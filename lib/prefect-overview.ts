@@ -17,6 +17,7 @@ export type PrefectDeployment = {
   nextRunAt: string
   lastRunState: string
   lastRunAt: string
+  hasSchedule: boolean
   url: string
 }
 
@@ -113,6 +114,7 @@ function normalizeDeployment(value: unknown): PrefectDeployment {
     nextRunAt: readString(record, ['nextRunAt', 'next_run_at']),
     lastRunState: readString(record, ['lastRunState', 'last_run_state']),
     lastRunAt: readString(record, ['lastRunAt', 'last_run_at']),
+    hasSchedule: record.hasSchedule === true || record.has_schedule === true,
     url: readString(record, ['url']),
   }
 }

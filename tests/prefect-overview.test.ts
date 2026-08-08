@@ -148,3 +148,9 @@ test('prefect operations labels distinguish empty scheduled and run-history fiel
   assert.equal(deploymentLastRunLabel(''), 'No runs yet')
   assert.equal(deploymentNextRunLabel(''), 'Not scheduled')
 })
+
+test('a deployment with a schedule but nothing queued is not called unscheduled', () => {
+  assert.equal(deploymentNextRunLabel('', true), 'Scheduled, none queued')
+  assert.equal(deploymentNextRunLabel('', false), 'Not scheduled')
+  assert.equal(deploymentNextRunLabel('', undefined), 'Not scheduled')
+})
